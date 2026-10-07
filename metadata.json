@@ -1,0 +1,6 @@
+{
+  "name": "BoulangeriePro - ERP & Caisse Boulangerie Artisanale",
+  "description": "Système de gestion intégrée pour boulangerie-pâtisserie : Caisse POS tactile, production & recettes, stock de matières premières, suivi des pertes, commandes B2B, multi-boutiques et prévisions intelligentes.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
