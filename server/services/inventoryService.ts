@@ -7,7 +7,7 @@
  */
 
 import { query, queryOne, transaction } from "../db";
-import { v4 as uuid } from "uuid";
+import { randomUUID as uuid } from "node:crypto";
 import type { StockMovement, StockMovementSource } from "../types/bakery";
 
 export type { StockMovement, StockMovementSource };
@@ -93,8 +93,8 @@ export const adjustMaterialStock = async (
   storeId: string,
 ): Promise<void> => {
   await transaction(async (tx) => {
-    const mat = await tx.queryOne<{ current_stock: number }>(
-      `SELECT current_stock FROM raw_materials WHERE id = $1`,
+    const mat = await tx.queryOne<{ current_stock: number; unit: string }>(
+      `SELECT current_stock, unit FROM raw_materials WHERE id = $1`,
       [materialId],
     );
 

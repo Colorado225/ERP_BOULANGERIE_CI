@@ -6,36 +6,35 @@
  */
 
 import { Router } from "express";
-import { getTodayStats, getRecentSales, getLowStockProducts, getRecentStockMovements, getProductionOrdersByStore, getPurchaseOrdersByStore } from "../services/reportService";
+import { getTodayStats, getRecentSales, getLowStockProducts, getRecentStockMovements } from "../services/reportService";
 import { getStores } from "../services/storesQueries";
 import { getSuppliers } from "../services/suppliersQueries";
-import { getCustomers } from "../services/customersQueries";
+import { getCustomersByStore } from "../services/customersQueries";
 import { getRecipesWithIngredients } from "../services/recipeQueries";
-import { getProductionOrder, getProductionOrdersByStore as getProdOrders } from "../services/productionQueries";
-import { getPurchaseOrder, getPurchaseOrdersByStore as getPOs } from "../services/purchaseQueries";
-import { getMaterial, getSalesForStore } from "../services/salesQueries";
-
-import type { Router as RetroRouter } from "express";
+import { getProductionOrdersByStore } from "../services/productionQueries";
+import { getPurchaseOrdersByStore } from "../services/purchaseQueries";
+import { getSalesForStore } from "../services/salesQueries";
 
 export const reportsRouter = Router();
+
+/** StoreId de la requête, avec repli sûr pour les appels sans session. */
+const storeOf = (req: unknown): string =>
+  (req as { user?: { storeId?: string } }).user?.storeId ?? "store-1";
 
 // ------------------------------------------------------------------
 // Dashboard
 // ------------------------------------------------------------------
 
 reportsRouter.get("/dashboard/stats", async (_req, res) => {
-  const storeId = (_req as { user?: { storeId?: string } }).user?.storeId ?? "store-1";
-  res.json(await getTodayStats(storeId));
+  res.json(await getTodayStats(storeOf(_req)));
 });
 
 reportsRouter.get("/dashboard/recent-sales", async (_req, res) => {
-  const storeId = (_req as { user?: { storeId?: string } }).user?.storeId ?? "store-1";
-  res.json(await getRecentSales(storeId));
+  res.json(await getRecentSales(storeOf(_req)));
 });
 
 reportsRouter.get("/dashboard/low-stock-products", async (_req, res) => {
-  const storeId = (_req as { user?: { storeId?: string } }).user?.storeId ?? "store-1";
-  res.json(await getLowStockProducts(storeId));
+  res.json(await getLowStockProducts(storeOf(_req)));
 });
 
 // ------------------------------------------------------------------
@@ -43,13 +42,11 @@ reportsRouter.get("/dashboard/low-stock-products", async (_req, res) => {
 // ------------------------------------------------------------------
 
 reportsRouter.get("/inventory/materials/:id/movements", async (req, res) => {
-  const movements = await getMaterial(req.params.id);
-  res.json(movements ?? []);
+  res.json(await getRecentStockMovements(req.params.id, 50));
 });
 
 reportsRouter.get("/inventory/movements/:id", async (req, res) => {
-  const movements = await getMaterial(req.params.id);
-  res.json(movements ?? []);
+  res.json(await getRecentStockMovements(req.params.id, 50));
 });
 
 // ------------------------------------------------------------------
@@ -61,11 +58,11 @@ reportsRouter.get("/references/stores", async (_req, res) => {
 });
 
 reportsRouter.get("/references/suppliers", async (_req, res) => {
-  res.json(await getSuppliers());
+  res.json(await getSuppliers(storeOf(_req)));
 });
 
 reportsRouter.get("/references/customers", async (_req, res) => {
-  res.json(await getCustomers());
+  res.json(await getCustomersByStore(storeOf(_req)));
 });
 
 reportsRouter.get("/references/recipes", async (_req, res) => {
@@ -73,13 +70,11 @@ reportsRouter.get("/references/recipes", async (_req, res) => {
 });
 
 reportsRouter.get("/references/production-orders", async (_req, res) => {
-  const storeId = (_req as { user?: { storeId?: string } }).user?.storeId ?? "store-1";
-  res.json(await getProdOrders(storeId));
+  res.json(await getProductionOrdersByStore(storeOf(_req), 500));
 });
 
 reportsRouter.get("/references/purchase-orders", async (_req, res) => {
-  const storeId = (_req as { user?: { storeId?: string } }).user?.storeId ?? "store-1";
-  res.json(await getPOs(storeId));
+  res.json(await getPurchaseOrdersByStore(storeOf(_req), 500));
 });
 
 // ------------------------------------------------------------------
@@ -87,7 +82,7 @@ reportsRouter.get("/references/purchase-orders", async (_req, res) => {
 // ------------------------------------------------------------------
 
 reportsRouter.get("/sales/history", async (_req, res) => {
-  const storeId = (_req as { user?: { storeId?: string } }).user?.storeId ?? "store-1";
+  const storeId = storeOf(_req);
   const sales = await getSalesForStore(storeId, 200);
   // Agrégation mensuelle simplifiée pour le graphique, à défaut
   const monthly = sales.reduce<Record<string, number>>((acc, s) => {

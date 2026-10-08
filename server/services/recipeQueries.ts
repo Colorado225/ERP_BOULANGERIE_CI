@@ -28,7 +28,10 @@ export const getRecipesWithIngredients = async (): Promise<Recipe[]> => {
        FROM recipe_ingredients ORDER BY recipe_id`,
   );
 
-  const byRecipe = new Map<string, typeof ingredients[0][]>();
+  const byRecipe = new Map<
+    string,
+    { material_id: string | null; material_name: string; quantity: number; unit: string | null; cost: number }[]
+  >();
   for (const ing of ingredients) {
     const key = ing.recipe_id;
     if (!byRecipe.has(key)) byRecipe.set(key, []);
@@ -37,6 +40,12 @@ export const getRecipesWithIngredients = async (): Promise<Recipe[]> => {
 
   return recipes.map((r) => ({
     ...r,
-    ingredients: byRecipe.get(r.id) ?? [],
+    ingredients: (byRecipe.get(r.id) ?? []).map((ing) => ({
+      materialId: ing.material_id ?? "",
+      materialName: ing.material_name,
+      quantity: Number(ing.quantity),
+      unit: ing.unit ?? "",
+      cost: Number(ing.cost),
+    })),
   }));
 };

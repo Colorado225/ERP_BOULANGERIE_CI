@@ -29,27 +29,27 @@ export interface DashboardStats {
 export const getTodayStats = async (storeId: string): Promise<DashboardStats> => {
   const [salesRes, productionRes, purchasesRes, productsRes, materialsRes] =
     await Promise.all([
-      query<Sale>(
+      query<{ total: number | string; count: number }>(
         `SELECT COALESCE(SUM(total),0)::numeric AS total, COUNT(*) AS count
            FROM sales WHERE store_id = $1 AND date >= CURRENT_DATE`,
         [storeId],
       ),
-      query(
+      query<{ count: number }>(
         `SELECT COUNT(*) AS count FROM production_orders
            WHERE store_id = $1 AND status = 'en_cours'`,
         [storeId],
       ),
-      query<PurchaseOrder>(
+      query<{ count: number }>(
         `SELECT COUNT(*) AS count FROM purchase_orders
            WHERE store_id = $1 AND date >= CURRENT_DATE`,
         [storeId],
       ),
-      query(
+      query<{ count: number }>(
         `SELECT COUNT(*) AS count FROM products
            WHERE store_id = $1 AND stock <= min_stock`,
         [storeId],
       ),
-      query(
+      query<{ count: number }>(
         `SELECT COUNT(*) AS count FROM raw_materials
            WHERE store_id = $1 AND current_stock <= min_stock_alert`,
         [storeId],
@@ -59,8 +59,8 @@ export const getTodayStats = async (storeId: string): Promise<DashboardStats> =>
   const salesToday = salesRes[0] ?? { total: "0", count: 0 };
   const prodToday = productionRes[0] ?? { count: 0 };
   const purchasesToday = purchasesRes[0] ?? { count: 0 };
-  const lowStockProducts = productsRes[0]?.count ?? 0;
-  const lowStockMaterials = materialsRes[0]?.count ?? 0;
+  const lowStockProducts = Number(productsRes[0]?.count ?? 0);
+  const lowStockMaterials = Number(materialsRes[0]?.count ?? 0);
 
   const todaySales = Number(salesToday.total);
   const salesCount = Number(salesToday.count);

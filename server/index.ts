@@ -167,10 +167,10 @@ app.get("/api/health", (_req, res) => {
 app.use("/api/auth", authRouter);
 
 // Données de référentiel : produits, matières, recettes, clients, fournisseurs…
-app.use("/api", catalogRouter);
+app.use("/api/catalog", catalogRouter);
 
 // Opérations métier : ventes, production, achats, pertes, caisse…
-app.use("/api", operationsRouter);
+app.use("/api/operations", operationsRouter);
 
 // Administration : paramètres de l'entreprise, utilisateurs, sauvegarde.
 app.use("/api", adminRouter);

@@ -5,7 +5,7 @@
  */
 
 import { query, queryOne, transaction } from "../db";
-import { v4 as uuid } from "uuid";
+import { randomUUID as uuid } from "node:crypto";
 import type { PurchaseOrder, PurchaseOrderItem } from "../types/bakery";
 
 export interface PurchaseOrderInput {

@@ -9,6 +9,7 @@
 
 import { Router } from "express";
 import { query, queryOne, transaction } from "../db";
+import { getRecipesWithIngredients } from "../services/recipeQueries";
 
 export const catalogRouter = Router();
 
@@ -251,6 +252,287 @@ catalogRouter.put("/materials/:id", async (req, res) => {
 catalogRouter.delete("/materials/:id", async (req, res) => {
   const result = await query(`DELETE FROM raw_materials WHERE id=$1 RETURNING id`, [req.params.id]);
   if (result.length === 0) return res.status(404).json({ error: "Matière introuvable." });
+  res.json({ deleted: true });
+});
+
+
+/** ------------------------------------------------------------------ */
+/**  RECIPES — écritures atomiques (fiche + ingrédients)               */
+/** ------------------------------------------------------------------ */
+
+const INGREDIENT_COLUMNS = `id, recipe_id AS "recipeId", material_id AS "materialId",
+        material_name AS "materialName", quantity, unit, cost`;
+
+catalogRouter.get("/recipes", async (_req, res) => {
+  res.json(await getRecipesWithIngredients());
+});
+
+catalogRouter.post("/recipes", async (req, res) => {
+  const r = req.body as {
+    id?: string; name: string; productId?: string; productName?: string;
+    outputYield?: number; outputUnit?: string; preparationTimeMin?: number;
+    proofingTimeMin?: number; bakingTimeMin?: number; bakingTempC?: number;
+    instructions?: string[]; totalCost?: number; costPerUnit?: number;
+    ingredients?: { materialId: string; materialName: string; quantity: number; unit: string; cost: number }[];
+  };
+  if (!r.name) return res.status(400).json({ error: "Le nom de la recette est obligatoire." });
+
+  try {
+    // La recette ET ses ingrédients sont écrits dans une seule transaction.
+    const recipe = await transaction(async (tx) => {
+      const id = r.id ?? `rec-${Date.now()}`;
+      const row = await tx.queryOne<Record<string, unknown>>(
+        `INSERT INTO recipes
+           (id, name, product_id, product_name, output_yield, output_unit,
+            preparation_time_min, proofing_time_min, baking_time_min, baking_temp_c,
+            instructions, total_cost, cost_per_unit)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+         RETURNING id`,
+        [
+          id, r.name, r.productId ?? null, r.productName ?? null,
+          r.outputYield ?? 0, r.outputUnit ?? null,
+          r.preparationTimeMin ?? 0, r.proofingTimeMin ?? 0,
+          r.bakingTimeMin ?? 0, r.bakingTempC ?? 0,
+          JSON.stringify(r.instructions ?? []), r.totalCost ?? 0, r.costPerUnit ?? 0,
+        ],
+      );
+      if (!row) throw new Error("Insertion de la recette échouée.");
+
+      for (const ing of r.ingredients ?? []) {
+        await tx.query(
+          `INSERT INTO recipe_ingredients
+             (id, recipe_id, material_id, material_name, quantity, unit, cost)
+           VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [`ing-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, id,
+           ing.materialId, ing.materialName, ing.quantity, ing.unit ?? null, ing.cost ?? 0],
+        );
+      }
+      return { id };
+    });
+
+    const saved = await getRecipesWithIngredients();
+    res.status(201).json(saved.find((x) => x.id === recipe.id) ?? recipe);
+  } catch (err) {
+    console.error("[api] échec recette :", err);
+    res.status(500).json({ error: "Échec de l'enregistrement de la recette." });
+  }
+});
+
+
+catalogRouter.put("/recipes/:id", async (req, res) => {
+  const r = req.body as {
+    name?: string; productId?: string | null; productName?: string | null;
+    outputYield?: number; outputUnit?: string | null;
+    preparationTimeMin?: number; proofingTimeMin?: number;
+    bakingTimeMin?: number; bakingTempC?: number;
+    instructions?: string[]; totalCost?: number; costPerUnit?: number;
+    ingredients?: { materialId: string; materialName: string; quantity: number; unit: string; cost: number }[];
+  };
+  const id = req.params.id;
+
+  try {
+    // Mise à jour de la fiche ET remplacement des ingrédients : atomique.
+    await transaction(async (tx) => {
+      const sets: string[] = [];
+      const params: unknown[] = [];
+      let i = 1;
+      const push = (col: string, val: unknown) => { sets.push(`${col} = $${i++}`); params.push(val); };
+      if (r.name !== undefined) push("name", r.name);
+      if (r.productId !== undefined) push("product_id", r.productId);
+      if (r.productName !== undefined) push("product_name", r.productName);
+      if (r.outputYield !== undefined) push("output_yield", r.outputYield);
+      if (r.outputUnit !== undefined) push("output_unit", r.outputUnit);
+      if (r.preparationTimeMin !== undefined) push("preparation_time_min", r.preparationTimeMin);
+      if (r.proofingTimeMin !== undefined) push("proofing_time_min", r.proofingTimeMin);
+      if (r.bakingTimeMin !== undefined) push("baking_time_min", r.bakingTimeMin);
+      if (r.bakingTempC !== undefined) push("baking_temp_c", r.bakingTempC);
+      if (r.instructions !== undefined) push("instructions", JSON.stringify(r.instructions));
+      if (r.totalCost !== undefined) push("total_cost", r.totalCost);
+      if (r.costPerUnit !== undefined) push("cost_per_unit", r.costPerUnit);
+
+      if (sets.length > 0) {
+        params.push(id);
+        const updated = await tx.query(
+          `UPDATE recipes SET ${sets.join(", ")} WHERE id = $${i} RETURNING id`,
+          params,
+        );
+        if (updated.length === 0) throw new Error("RECIPES_NOT_FOUND");
+      }
+
+      if (r.ingredients !== undefined) {
+        await tx.query(`DELETE FROM recipe_ingredients WHERE recipe_id = $1`, [id]);
+        for (const ing of r.ingredients) {
+          await tx.query(
+            `INSERT INTO recipe_ingredients
+               (id, recipe_id, material_id, material_name, quantity, unit, cost)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+            [`ing-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, id,
+             ing.materialId, ing.materialName, ing.quantity, ing.unit ?? null, ing.cost ?? 0],
+          );
+        }
+      }
+    });
+
+    const saved = await getRecipesWithIngredients();
+    const recipe = saved.find((x) => x.id === id);
+    if (!recipe) return res.status(404).json({ error: "Recette introuvable." });
+    res.json(recipe);
+  } catch (err) {
+    if (err instanceof Error && err.message === "RECIPES_NOT_FOUND") {
+      return res.status(404).json({ error: "Recette introuvable." });
+    }
+    console.error("[api] échec mise à jour recette :", err);
+    res.status(500).json({ error: "Échec de la mise à jour de la recette." });
+  }
+});
+
+catalogRouter.delete("/recipes/:id", async (req, res) => {
+  // recipe_ingredients est supprimé en cascade (ON DELETE CASCADE).
+  const result = await query(`DELETE FROM recipes WHERE id=$1 RETURNING id`, [req.params.id]);
+  if (result.length === 0) return res.status(404).json({ error: "Recette introuvable." });
+  res.json({ deleted: true });
+});
+
+
+/** ------------------------------------------------------------------ */
+/**  CUSTOMERS                                                          */
+/** ------------------------------------------------------------------ */
+
+const CUSTOMER_COLUMNS = `id, name, phone, email, type, address,
+        loyalty_points AS "loyaltyPoints", credit_balance AS "creditBalance",
+        credit_limit AS "creditLimit", notes`;
+
+catalogRouter.get("/customers", async (_req, res) => {
+  res.json(
+    await query(`SELECT ${CUSTOMER_COLUMNS} FROM customers ORDER BY name`),
+  );
+});
+
+catalogRouter.post("/customers", async (req, res) => {
+  const c = req.body as {
+    id?: string; name: string; phone?: string; email?: string; type?: string;
+    address?: string; loyaltyPoints?: number; creditBalance?: number;
+    creditLimit?: number; notes?: string;
+  };
+  if (!c.name) return res.status(400).json({ error: "Le nom du client est obligatoire." });
+  const row = await queryOne(
+    `INSERT INTO customers
+       (id, name, phone, email, type, address, loyalty_points, credit_balance, credit_limit, notes)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+     RETURNING ${CUSTOMER_COLUMNS}`,
+    [
+      c.id ?? null, c.name, c.phone ?? null, c.email ?? null, c.type ?? "particulier",
+      c.address ?? null, c.loyaltyPoints ?? 0, c.creditBalance ?? 0,
+      c.creditLimit ?? 0, c.notes ?? null,
+    ],
+  );
+  if (!row) return res.status(500).json({ error: "Erreur interne." });
+  res.status(201).json(row);
+});
+
+catalogRouter.put("/customers/:id", async (req, res) => {
+  const c = req.body as {
+    name?: string; phone?: string; email?: string; type?: string;
+    address?: string; loyaltyPoints?: number; creditBalance?: number;
+    creditLimit?: number; notes?: string;
+  };
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  let i = 1;
+  const push = (col: string, val: unknown) => { sets.push(`${col} = $${i++}`); params.push(val); };
+  if (c.name !== undefined) push("name", c.name);
+  if (c.phone !== undefined) push("phone", c.phone);
+  if (c.email !== undefined) push("email", c.email);
+  if (c.type !== undefined) push("type", c.type);
+  if (c.address !== undefined) push("address", c.address);
+  if (c.loyaltyPoints !== undefined) push("loyalty_points", c.loyaltyPoints);
+  if (c.creditBalance !== undefined) push("credit_balance", c.creditBalance);
+  if (c.creditLimit !== undefined) push("credit_limit", c.creditLimit);
+  if (c.notes !== undefined) push("notes", c.notes);
+  if (sets.length === 0) return res.status(400).json({ error: "Aucun champ à mettre à jour." });
+  params.push(req.params.id);
+  const result = await query(
+    `UPDATE customers SET ${sets.join(", ")} WHERE id = $${i} RETURNING ${CUSTOMER_COLUMNS}`,
+    params,
+  );
+  if (result.length === 0) return res.status(404).json({ error: "Client introuvable." });
+  res.json(result[0]);
+});
+
+catalogRouter.delete("/customers/:id", async (req, res) => {
+  const result = await query(`DELETE FROM customers WHERE id=$1 RETURNING id`, [req.params.id]);
+  if (result.length === 0) return res.status(404).json({ error: "Client introuvable." });
+  res.json({ deleted: true });
+});
+
+
+/** ------------------------------------------------------------------ */
+/**  SUPPLIERS                                                          */
+/** ------------------------------------------------------------------ */
+
+const SUPPLIER_COLUMNS = `id, name, contact_name AS "contactName", phone, email, address,
+        supplied_materials AS "suppliedMaterials", payment_terms AS "paymentTerms",
+        pending_balance AS "pendingBalance"`;
+
+catalogRouter.get("/suppliers", async (_req, res) => {
+  res.json(
+    await query(`SELECT ${SUPPLIER_COLUMNS} FROM suppliers ORDER BY name`),
+  );
+});
+
+catalogRouter.post("/suppliers", async (req, res) => {
+  const s = req.body as {
+    id?: string; name: string; contactName?: string; phone?: string;
+    email?: string; address?: string; suppliedMaterials?: string[];
+    paymentTerms?: string; pendingBalance?: number;
+  };
+  if (!s.name) return res.status(400).json({ error: "Le nom du fournisseur est obligatoire." });
+  const row = await queryOne(
+    `INSERT INTO suppliers
+       (id, name, contact_name, phone, email, address, supplied_materials, payment_terms, pending_balance)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
+     RETURNING ${SUPPLIER_COLUMNS}`,
+    [
+      s.id ?? null, s.name, s.contactName ?? null, s.phone ?? null, s.email ?? null,
+      s.address ?? null, JSON.stringify(s.suppliedMaterials ?? []),
+      s.paymentTerms ?? null, s.pendingBalance ?? 0,
+    ],
+  );
+  if (!row) return res.status(500).json({ error: "Erreur interne." });
+  res.status(201).json(row);
+});
+
+catalogRouter.put("/suppliers/:id", async (req, res) => {
+  const s = req.body as {
+    name?: string; contactName?: string; phone?: string; email?: string;
+    address?: string; suppliedMaterials?: string[]; paymentTerms?: string;
+    pendingBalance?: number;
+  };
+  const sets: string[] = [];
+  const params: unknown[] = [];
+  let i = 1;
+  const push = (col: string, val: unknown) => { sets.push(`${col} = $${i++}`); params.push(val); };
+  if (s.name !== undefined) push("name", s.name);
+  if (s.contactName !== undefined) push("contact_name", s.contactName);
+  if (s.phone !== undefined) push("phone", s.phone);
+  if (s.email !== undefined) push("email", s.email);
+  if (s.address !== undefined) push("address", s.address);
+  if (s.suppliedMaterials !== undefined) push("supplied_materials", JSON.stringify(s.suppliedMaterials));
+  if (s.paymentTerms !== undefined) push("payment_terms", s.paymentTerms);
+  if (s.pendingBalance !== undefined) push("pending_balance", s.pendingBalance);
+  if (sets.length === 0) return res.status(400).json({ error: "Aucun champ à mettre à jour." });
+  params.push(req.params.id);
+  const result = await query(
+    `UPDATE suppliers SET ${sets.join(", ")} WHERE id = $${i} RETURNING ${SUPPLIER_COLUMNS}`,
+    params,
+  );
+  if (result.length === 0) return res.status(404).json({ error: "Fournisseur introuvable." });
+  res.json(result[0]);
+});
+
+catalogRouter.delete("/suppliers/:id", async (req, res) => {
+  const result = await query(`DELETE FROM suppliers WHERE id=$1 RETURNING id`, [req.params.id]);
+  if (result.length === 0) return res.status(404).json({ error: "Fournisseur introuvable." });
   res.json({ deleted: true });
 });
 

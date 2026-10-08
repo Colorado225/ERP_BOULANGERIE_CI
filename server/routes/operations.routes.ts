@@ -10,12 +10,12 @@
 
 import { Router } from "express";
 import { query, queryOne } from "../db";
-import { createSale, getSale, getSalesForStore } from "../services/salesService";
-import { createProductionOrder, updateProductionOrder, getProductionOrder, getProductionOrdersByStore } from "../services/productionService";
+import { createSale } from "../services/salesService";
+import { getSale, getSalesForStore } from "../services/salesQueries";
+import { createProductionOrder, updateProductionOrder } from "../services/productionService";
+import { getProductionOrder, getProductionOrdersByStore } from "../services/productionQueries";
 import { createPurchaseOrder, getPurchaseOrder, getPurchaseOrdersByStore, updatePurchaseOrderStatus } from "../services/purchaseService";
-import { createStockMovement, adjustMaterialStock } from "../services/inventoryService";
-import { createLoss } from "../services/inventoryService";
-import type { Router as RetroRouter } from "express";
+import { createStockMovement, adjustMaterialStock, createLoss } from "../services/inventoryService";
 
 export const operationsRouter = Router();
 
@@ -103,6 +103,7 @@ operationsRouter.post(
       status?: string; scheduledTime?: string; completedTime?: string;
       bakerName?: string; shift?: string; storeId?: string; notes?: string;
     };
+    if (!o.recipeId) return res.status(400).json({ error: "La recette est obligatoire." });
 
     try {
       const order = await createProductionOrder({

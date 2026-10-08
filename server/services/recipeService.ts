@@ -4,7 +4,7 @@
  */
 
 import { query, queryOne, transaction } from "../db";
-import { v4 as uuid } from "uuid";
+import { randomUUID as uuid } from "node:crypto";
 import type { Recipe, RecipeInput } from "../types/bakery";
 
 export const createRecipe = async (input: RecipeInput): Promise<Recipe> => {

@@ -7,8 +7,11 @@
  */
 
 import { query, queryOne, transaction } from "../db";
-import { v4 as uuid } from "uuid";
+import { randomUUID as uuid } from "node:crypto";
 import type { Sale, SaleItem } from "../types/bakery";
+
+/** Ligne de ticket telle qu'écrite en base (avec les colonnes techniques). */
+type SaleItemRow = SaleItem & { id: string; saleId: string };
 
 export interface SaleInput {
   items: { productId: string; quantity: number; unitPrice?: number; name?: string }[];
@@ -33,7 +36,7 @@ export const createSale = async (input: SaleInput): Promise<Sale> => {
   return transaction(async (tx) => {
     // 1. Valider les produits et calculer le total
     let subtotal = 0;
-    const saleItems: SaleItem[] = [];
+    const saleItems: SaleItemRow[] = [];
     for (const line of input.items) {
       const prod = await tx.queryOne<{
         id: string;

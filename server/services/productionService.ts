@@ -4,7 +4,8 @@
  */
 
 import { query, queryOne, transaction } from "../db";
-import { v4 as uuid } from "uuid";
+import { randomUUID as uuid } from "node:crypto";
+import { getProductionOrder } from "./productionQueries";
 import type { ProductionOrder, ProductionOrderInput } from "../types/bakery";
 
 export const createProductionOrder = async (
