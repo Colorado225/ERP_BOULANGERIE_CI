@@ -8,14 +8,14 @@
  */
 
 /** Identifiant du mode consolidé « toutes les boutiques ». */
-export const ALL_STORES_MODE = 'all';
+export const ALL_STORES_MODE = "all";
 
 /**
  * Boutique de repli lorsqu'on écrit une entité alors que le mode
  * consolidé « Groupe » est actif. Doit correspondre à la boutique
  * marquée `isMain` dans les données.
  */
-export const DEFAULT_WRITE_STORE_ID = 'store-1';
+export const DEFAULT_WRITE_STORE_ID = "store-1";
 
 /**
  * Résout l'identifiant de boutique à utiliser pour une écriture.

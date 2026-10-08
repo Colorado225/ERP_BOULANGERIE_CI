@@ -13,5 +13,9 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "include": ["./**/*.ts", "../src/data/initialData.ts", "../src/types/bakery.ts"]
+  "include": [
+    "./**/*.ts",
+    "../src/data/initialData.ts",
+    "../src/types/bakery.ts"
+  ]
 }

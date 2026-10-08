@@ -108,6 +108,7 @@ export const api = {
   patch: <T>(path: string, body?: unknown) =>
     apiFetch<T>(path, { method: "PATCH", body: JSON.stringify(body ?? {}) }),
   del: <T>(path: string) => apiFetch<T>(path, { method: "DELETE" }),
+  delete: <T>(path: string) => apiFetch<T>(path, { method: "DELETE" }),
 };
 
 /* ------------------------------- TYPES AUTH -------------------------------- */

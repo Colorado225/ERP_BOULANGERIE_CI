@@ -141,11 +141,10 @@ export const StockMovementsView: React.FC = () => {
             <button
               key={s.id}
               onClick={() => setFilterSource(s.id)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${
-                filterSource === s.id
-                  ? 'bg-amber-500 text-stone-950'
-                  : 'bg-stone-800 hover:bg-stone-750 text-stone-300 border border-stone-700/60'
-              }`}
+              className={`px-3.5 py-2 rounded-xl text-xs font-bold whitespace-nowrap transition-all ${filterSource === s.id
+                ? 'bg-amber-500 text-stone-950'
+                : 'bg-stone-800 hover:bg-stone-750 text-stone-300 border border-stone-700/60'
+                }`}
             >
               {s.label}
             </button>
@@ -203,9 +202,8 @@ export const StockMovementsView: React.FC = () => {
                           </span>
                         </td>
                         <td
-                          className={`py-2.5 px-3 text-right font-black whitespace-nowrap ${
-                            isIn ? 'text-emerald-400' : 'text-rose-400'
-                          }`}
+                          className={`py-2.5 px-3 text-right font-black whitespace-nowrap ${isIn ? 'text-emerald-400' : 'text-rose-400'
+                            }`}
                         >
                           {isIn ? '+' : ''}
                           {mv.delta} {mv.unit}
