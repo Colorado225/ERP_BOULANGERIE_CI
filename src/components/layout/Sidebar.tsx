@@ -7,6 +7,7 @@ import {
   BookOpen,
   Package,
   Layers,
+  History,
   Truck,
   Users,
   Trash2,
@@ -83,6 +84,13 @@ export const Sidebar: React.FC = () => {
       color: 'text-indigo-400',
     },
     {
+      id: 'stock_movements',
+      label: 'Journal des Mouvements',
+      icon: History,
+      badge: null,
+      color: 'text-sky-300',
+    },
+    {
       id: 'purchases',
       label: 'Achats & Fournisseurs',
       icon: Truck,
@@ -146,12 +154,11 @@ export const Sidebar: React.FC = () => {
       )}
 
       <aside
-        className={`fixed md:sticky top-16 z-40 md:z-10 w-64 bg-stone-925 bg-stone-900 border-r border-stone-800 flex flex-col justify-between h-[calc(100vh-4rem)] select-none shrink-0 transition-transform duration-200 ${
-          isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
-        }`}
+        className={`fixed md:sticky top-16 z-40 md:z-10 w-72 md:w-64 bg-stone-900 border-r border-stone-800 flex flex-col justify-between h-[calc(100vh-4rem)] select-none shrink-0 transition-transform duration-300 ease-out ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0'
+          }`}
       >
-        <div className="py-4 px-3 space-y-1 overflow-y-auto">
-          <div className="px-3 pb-2 text-[11px] font-bold uppercase tracking-wider text-stone-500">
+        <div className="py-4 px-4 space-y-1.5 overflow-y-auto">
+          <div className="px-3 pb-3 text-[11px] font-bold uppercase tracking-wider text-stone-500">
             Exploitation Fournil
           </div>
 
@@ -162,19 +169,18 @@ export const Sidebar: React.FC = () => {
               <button
                 key={item.id}
                 onClick={() => handleSelectTab(item.id)}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                  isActive
+                className={`w-full flex items-center justify-between px-4 py-4 md:py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.98] ${isActive
                     ? 'bg-amber-500/15 text-amber-200 border border-amber-500/30 shadow-sm'
                     : 'text-stone-300 hover:text-stone-100 hover:bg-stone-800/60'
-                }`}
+                  }`}
               >
-                <div className="flex items-center gap-3">
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-amber-400' : 'text-stone-400'}`} />
-                  <span>{item.label}</span>
+                <div className="flex items-center gap-4 md:gap-3">
+                  <Icon className={`w-6 h-6 md:w-4 md:h-4 ${isActive ? 'text-amber-400' : 'text-stone-400'}`} />
+                  <span className="text-base md:text-sm">{item.label}</span>
                 </div>
                 {item.badge && (
                   <span
-                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${item.badgeColor || 'bg-stone-800 text-stone-300 border-stone-700'}`}
+                    className={`text-[10px] font-bold px-2 py-1 rounded-full border ${item.badgeColor || 'bg-stone-800 text-stone-300 border-stone-700'}`}
                   >
                     {item.badge}
                   </span>
@@ -183,7 +189,7 @@ export const Sidebar: React.FC = () => {
             );
           })}
 
-          <div className="pt-4 px-3 pb-2 text-[11px] font-bold uppercase tracking-wider text-stone-500 border-t border-stone-800/80 mt-2">
+          <div className="pt-5 px-3 pb-3 text-[11px] font-bold uppercase tracking-wider text-stone-500 border-t border-stone-800/80 mt-3">
             Gestion Commerciale & Pilotage
           </div>
 
@@ -194,19 +200,18 @@ export const Sidebar: React.FC = () => {
               <button
                 key={item.id}
                 onClick={() => handleSelectTab(item.id)}
-                className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-sm font-semibold transition-all ${
-                  isActive
+                className={`w-full flex items-center justify-between px-4 py-4 md:py-2.5 rounded-xl text-sm font-semibold transition-all active:scale-[0.98] ${isActive
                     ? 'bg-amber-500/15 text-amber-200 border border-amber-500/30 shadow-sm'
                     : 'text-stone-300 hover:text-stone-100 hover:bg-stone-800/60'
-                }`}
+                  }`}
               >
-                <div className="flex items-center gap-3">
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-amber-400' : 'text-stone-400'}`} />
-                  <span>{item.label}</span>
+                <div className="flex items-center gap-4 md:gap-3">
+                  <Icon className={`w-6 h-6 md:w-4 md:h-4 ${isActive ? 'text-amber-400' : 'text-stone-400'}`} />
+                  <span className="text-base md:text-sm">{item.label}</span>
                 </div>
                 {item.badge && (
                   <span
-                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full border ${item.badgeColor || 'bg-stone-800 text-stone-300 border-stone-700'}`}
+                    className={`text-[10px] font-bold px-2 py-1 rounded-full border ${item.badgeColor || 'bg-stone-800 text-stone-300 border-stone-700'}`}
                   >
                     {item.badge}
                   </span>
@@ -216,20 +221,20 @@ export const Sidebar: React.FC = () => {
           })}
         </div>
 
-      {/* Footer Info Box */}
-      <div className="p-3 border-t border-stone-800/80 bg-stone-950/40">
-        <div className="p-3 rounded-xl bg-stone-800/60 border border-stone-700/60">
-          <div className="flex items-center justify-between mb-1">
-            <span className="text-xs font-semibold text-stone-300">Mode Connecté</span>
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-          </div>
-          <p className="text-[11px] text-stone-400">Synchronisé • Caisse Prête</p>
-          <div className="mt-2 pt-2 border-t border-stone-700/60 flex items-center justify-between text-[11px] text-stone-400">
-            <span>Devise:</span>
-            <span className="font-bold text-amber-400">FCFA (XOF)</span>
+        {/* Footer Info Box - version mobile optimisée */}
+        <div className="p-4 md:p-3 border-t border-stone-800/80 bg-stone-950/40">
+          <div className="p-4 md:p-3 rounded-xl bg-stone-800/60 border border-stone-700/60">
+            <div className="flex items-center justify-between mb-2">
+              <span className="text-sm md:text-xs font-semibold text-stone-300">Mode Connecté</span>
+              <span className="w-3 h-3 md:w-2 md:h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            </div>
+            <p className="text-xs md:text-[11px] text-stone-400">Synchronisé • Caisse Prête</p>
+            <div className="mt-3 md:mt-2 pt-3 md:pt-2 border-t border-stone-700/60 flex items-center justify-between text-xs md:text-[11px] text-stone-400">
+              <span>Devise:</span>
+              <span className="font-bold text-amber-400">FCFA (XOF)</span>
+            </div>
           </div>
         </div>
-      </div>
       </aside>
     </>
   );

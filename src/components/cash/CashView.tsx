@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 
 export const CashView: React.FC = () => {
-  const { cashTransactions, formatMoney, addCashTransaction, sales } = useBakery();
+  const { cashTransactions, formatMoney, addCashTransaction, sales, writeStoreId } = useBakery();
 
   const [isExpenseModalOpen, setIsExpenseModalOpen] = useState<boolean>(false);
   const [isZModalOpen, setIsZModalOpen] = useState<boolean>(false);
@@ -49,7 +49,7 @@ export const CashView: React.FC = () => {
       amount: expenseAmount,
       description: expenseDescription,
       recordedBy: expenseUser,
-      storeId: 'store-1',
+      storeId: writeStoreId,
     });
 
     setIsExpenseModalOpen(false);
@@ -64,7 +64,7 @@ export const CashView: React.FC = () => {
       amount: countedCash,
       description: `Clôture Z journalière - Espèces comptées : ${countedCash} FCFA (Écart : ${cashDiscrepancy >= 0 ? '+' : ''}${cashDiscrepancy} FCFA) - ${zNotes}`,
       recordedBy: 'Responsable Caisse',
-      storeId: 'store-1',
+      storeId: writeStoreId,
     });
     setIsZModalOpen(false);
   };

@@ -28,7 +28,7 @@ import {
 } from '../ui';
 
 export const LossesView: React.FC = () => {
-  const { losses, products, formatMoney, addLossRecord } = useBakery();
+  const { losses, products, formatMoney, addLossRecord, writeStoreId } = useBakery();
 
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
   const [selectedProductId, setSelectedProductId] = useState<string>(products[0]?.id || '');
@@ -59,7 +59,7 @@ export const LossesView: React.FC = () => {
       reason,
       destination,
       recordedBy,
-      storeId: 'store-1',
+      storeId: writeStoreId,
       notes,
     });
 

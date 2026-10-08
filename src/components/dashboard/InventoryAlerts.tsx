@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useBakery } from '../../context/BakeryContext';
 import { Product } from '../../types/bakery';
+import { batchManager, BatchAlert, BatchAlertLevel } from '../../services/batchManager';
 import {
   AlertTriangle,
   AlertOctagon,
@@ -12,8 +13,8 @@ import {
   Layers,
   ArrowRight,
   TrendingDown,
-  Sparkles,
-  ShoppingBag,
+  Clock,
+  XCircle,
 } from 'lucide-react';
 import {
   Card,
@@ -74,14 +75,27 @@ export const InventoryAlerts: React.FC<InventoryAlertsProps> = ({
     activeFilter === 'immediate'
       ? immediateReplenishmentItems
       : activeFilter === 'warning'
-      ? warningItems
-      : belowMinStockProducts;
+        ? warningItems
+        : belowMinStockProducts;
 
   // Total deficit in units needed to reach minStock
   const totalUnitsDeficit = belowMinStockProducts.reduce(
     (sum, p) => sum + Math.max(0, p.minStock - p.stock),
     0
   );
+
+  // Alertes de lots expirés ou bientôt expirés (Phase 2.4 - Traçabilité DLC)
+  const [batchAlerts, setBatchAlerts] = useState<BatchAlert[]>([]);
+
+  useEffect(() => {
+    // Met à jour le statut des lots au chargement du composant
+    const alerts = batchManager.updateAllBatchesStatus(products);
+    setBatchAlerts(alerts);
+  }, [products]);
+
+  // Nombre d'alertes de lots
+  const expiredBatchesCount = batchAlerts.filter(a => a.level === BatchAlertLevel.EXPIRED).length;
+  const criticalBatchesCount = batchAlerts.filter(a => a.level === BatchAlertLevel.CRITICAL).length;
 
   // Handler for quick replenishment
   const handleQuickRestockSubmit = (e: React.FormEvent) => {
@@ -192,11 +206,10 @@ export const InventoryAlerts: React.FC<InventoryAlertsProps> = ({
           <button
             type="button"
             onClick={() => setActiveFilter('all')}
-            className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors ${
-              activeFilter === 'all'
-                ? 'bg-amber-500 text-stone-950 shadow'
-                : 'text-stone-400 hover:text-stone-200'
-            }`}
+            className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors ${activeFilter === 'all'
+              ? 'bg-amber-500 text-stone-950 shadow'
+              : 'text-stone-400 hover:text-stone-200'
+              }`}
           >
             Tous ({belowMinStockProducts.length})
           </button>
@@ -204,11 +217,10 @@ export const InventoryAlerts: React.FC<InventoryAlertsProps> = ({
           <button
             type="button"
             onClick={() => setActiveFilter('immediate')}
-            className={`px-2.5 py-1 rounded-lg font-bold text-[11px] flex items-center gap-1 transition-colors ${
-              activeFilter === 'immediate'
-                ? 'bg-rose-500 text-white shadow'
-                : 'text-stone-400 hover:text-rose-400'
-            }`}
+            className={`px-2.5 py-1 rounded-lg font-bold text-[11px] flex items-center gap-1 transition-colors ${activeFilter === 'immediate'
+              ? 'bg-rose-500 text-white shadow'
+              : 'text-stone-400 hover:text-rose-400'
+              }`}
           >
             <AlertOctagon className="w-3 h-3 text-rose-400" />
             <span>Urgent / Immédiat ({immediateReplenishmentItems.length})</span>
@@ -217,11 +229,10 @@ export const InventoryAlerts: React.FC<InventoryAlertsProps> = ({
           <button
             type="button"
             onClick={() => setActiveFilter('warning')}
-            className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors ${
-              activeFilter === 'warning'
-                ? 'bg-stone-700 text-stone-100 shadow'
-                : 'text-stone-400 hover:text-stone-200'
-            }`}
+            className={`px-2.5 py-1 rounded-lg font-bold text-[11px] transition-colors ${activeFilter === 'warning'
+              ? 'bg-stone-700 text-stone-100 shadow'
+              : 'text-stone-400 hover:text-stone-200'
+              }`}
           >
             Stock Faible ({warningItems.length})
           </button>
@@ -231,6 +242,24 @@ export const InventoryAlerts: React.FC<InventoryAlertsProps> = ({
           <div className="flex items-center gap-1.5 text-rose-400 font-bold text-[11px]">
             <AlertOctagon className="w-3.5 h-3.5 shrink-0" />
             <span>{immediateReplenishmentItems.length} article(s) en rupture imminente</span>
+          </div>
+        )}
+
+        {/* Alertes DLC / Lots expirés (Phase 2.4) */}
+        {batchAlerts.length > 0 && (
+          <div className="flex items-center gap-2 mt-2 w-full">
+            {expiredBatchesCount > 0 && (
+              <div className="flex items-center gap-1 text-rose-500 font-bold text-[11px] bg-rose-500/10 px-2 py-1 rounded-lg">
+                <XCircle className="w-3.5 h-3.5" />
+                <span>{expiredBatchesCount} lot(s) expiré(s)</span>
+              </div>
+            )}
+            {criticalBatchesCount > 0 && (
+              <div className="flex items-center gap-1 text-amber-500 font-bold text-[11px] bg-amber-500/10 px-2 py-1 rounded-lg">
+                <Clock className="w-3.5 h-3.5" />
+                <span>{criticalBatchesCount} lot(s) critique(s)</span>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -267,21 +296,19 @@ export const InventoryAlerts: React.FC<InventoryAlertsProps> = ({
             return (
               <div
                 key={product.id}
-                className={`p-3 rounded-2xl border transition-all ${
-                  isImmediate
-                    ? 'bg-rose-950/25 border-rose-900/60 hover:border-rose-700/80'
-                    : 'bg-stone-900/90 border-stone-800 hover:border-stone-700'
-                }`}
+                className={`p-3 rounded-2xl border transition-all ${isImmediate
+                  ? 'bg-rose-950/25 border-rose-900/60 hover:border-rose-700/80'
+                  : 'bg-stone-900/90 border-stone-800 hover:border-stone-700'
+                  }`}
               >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   {/* Left: Product Info & Alert Icon */}
                   <div className="flex items-start gap-3">
                     <div
-                      className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 border ${
-                        isImmediate
-                          ? 'bg-rose-950/80 border-rose-800/80 text-rose-300 shadow-sm'
-                          : 'bg-stone-850 border-stone-750 text-stone-200'
-                      }`}
+                      className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl shrink-0 border ${isImmediate
+                        ? 'bg-rose-950/80 border-rose-800/80 text-rose-300 shadow-sm'
+                        : 'bg-stone-850 border-stone-750 text-stone-200'
+                        }`}
                     >
                       {product.imageIcon || '🥖'}
                     </div>
@@ -341,13 +368,12 @@ export const InventoryAlerts: React.FC<InventoryAlertsProps> = ({
                     <div className="text-right min-w-[90px]">
                       <div className="flex items-center justify-end gap-1.5">
                         <span
-                          className={`font-black text-sm ${
-                            isOutOfStock
-                              ? 'text-rose-500'
-                              : isImmediate
+                          className={`font-black text-sm ${isOutOfStock
+                            ? 'text-rose-500'
+                            : isImmediate
                               ? 'text-rose-400'
                               : 'text-amber-400'
-                          }`}
+                            }`}
                         >
                           {product.stock}
                         </span>
@@ -360,13 +386,12 @@ export const InventoryAlerts: React.FC<InventoryAlertsProps> = ({
                       {/* Mini visual gauge */}
                       <div className="w-full bg-stone-950 rounded-full h-1.5 overflow-hidden mt-1 border border-stone-800">
                         <div
-                          className={`h-full rounded-full transition-all ${
-                            isOutOfStock
-                              ? 'bg-rose-600 w-0'
-                              : stockPct <= 35
+                          className={`h-full rounded-full transition-all ${isOutOfStock
+                            ? 'bg-rose-600 w-0'
+                            : stockPct <= 35
                               ? 'bg-rose-500'
                               : 'bg-amber-400'
-                          }`}
+                            }`}
                           style={{ width: `${Math.max(5, stockPct)}%` }}
                         />
                       </div>
@@ -579,11 +604,10 @@ export const InventoryAlerts: React.FC<InventoryAlertsProps> = ({
                       key={mult}
                       type="button"
                       onClick={() => setBakingMultiplier(mult)}
-                      className={`p-3 rounded-xl border text-center transition-all ${
-                        bakingMultiplier === mult
-                          ? 'bg-amber-500/20 border-amber-500 text-amber-300 font-bold'
-                          : 'bg-stone-950 border-stone-800 text-stone-300 hover:border-stone-700'
-                      }`}
+                      className={`p-3 rounded-xl border text-center transition-all ${bakingMultiplier === mult
+                        ? 'bg-amber-500/20 border-amber-500 text-amber-300 font-bold'
+                        : 'bg-stone-950 border-stone-800 text-stone-300 hover:border-stone-700'
+                        }`}
                     >
                       <span className="text-sm font-black">x{mult} Lot</span>
                       <p className="text-[10px] text-stone-400 mt-0.5">

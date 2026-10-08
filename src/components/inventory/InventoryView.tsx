@@ -206,11 +206,10 @@ export const InventoryView: React.FC = () => {
         {/* Toggle only alerts */}
         <button
           onClick={() => setOnlyAlerts(!onlyAlerts)}
-          className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${
-            onlyAlerts
+          className={`px-3 py-2 rounded-xl text-xs font-bold border transition-all flex items-center gap-1.5 ${onlyAlerts
               ? 'bg-red-500/20 text-red-300 border-red-500/50'
               : 'bg-stone-900 text-stone-400 border-stone-800 hover:text-stone-200'
-          }`}
+            }`}
         >
           <AlertTriangle className="w-3.5 h-3.5" />
           <span>Alertes Seuil ({alertCount})</span>
@@ -258,11 +257,10 @@ export const InventoryView: React.FC = () => {
                     {/* Current Stock */}
                     <td className="py-3.5 px-4">
                       <span
-                        className={`font-black text-sm px-2.5 py-0.5 rounded-lg border ${
-                          isCritical
+                        className={`font-black text-sm px-2.5 py-0.5 rounded-lg border ${isCritical
                             ? 'bg-red-950/70 text-red-300 border-red-800'
                             : 'bg-stone-950 text-stone-200 border-stone-800'
-                        }`}
+                          }`}
                       >
                         {mat.currentStock} {mat.unit}
                       </span>
@@ -286,7 +284,35 @@ export const InventoryView: React.FC = () => {
                     {/* Batch & Expiry */}
                     <td className="py-3.5 px-4 text-[11px]">
                       <p className="font-mono text-stone-300">{mat.batchNumber || 'N/A'}</p>
-                      <p className="text-stone-500">{mat.expiryDate || 'N/A'}</p>
+                      {mat.expiryDate ? (
+                        (() => {
+                          const today = new Date();
+                          today.setHours(0, 0, 0, 0);
+                          const expiry = new Date(mat.expiryDate);
+                          const diffDays = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+
+                          if (diffDays < 0) {
+                            // Périmé
+                            return (
+                              <p className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-rose-950/80 text-rose-300 border border-rose-800 font-semibold">
+                                ❌ PÉRIMÉ ({mat.expiryDate})
+                              </p>
+                            );
+                          } else if (diffDays <= 30) {
+                            // Expire dans moins de 30 jours
+                            return (
+                              <p className="mt-1 inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-950/80 text-amber-300 border border-amber-800 font-semibold">
+                                ⚠️ {diffDays}j ({mat.expiryDate})
+                              </p>
+                            );
+                          } else {
+                            // OK
+                            return <p className="text-emerald-500">{mat.expiryDate}</p>;
+                          }
+                        })()
+                      ) : (
+                        <p className="text-stone-500">N/A</p>
+                      )}
                     </td>
 
                     {/* Quick Adjust Button */}

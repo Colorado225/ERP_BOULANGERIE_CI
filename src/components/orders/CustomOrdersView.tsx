@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 
 export const CustomOrdersView: React.FC = () => {
-  const { customOrders, formatMoney, addCustomOrder, updateCustomOrderStatus } = useBakery();
+  const { customOrders, formatMoney, addCustomOrder, updateCustomOrderStatus, writeStoreId } = useBakery();
 
   const [isAddModalOpen, setIsAddModalOpen] = useState<boolean>(false);
 
@@ -49,7 +49,7 @@ export const CustomOrdersView: React.FC = () => {
       pickupTime,
       totalPrice,
       depositPaid,
-      storeId: 'store-1',
+      storeId: writeStoreId,
       notes,
     });
 

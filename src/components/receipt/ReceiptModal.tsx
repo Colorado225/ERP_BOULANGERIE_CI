@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Sale } from '../../types/bakery';
 import { useBakery } from '../../context/BakeryContext';
-import { Printer, X, Check, Share2, Wheat } from 'lucide-react';
+import { Printer, X, Check, Bluetooth, Wheat } from 'lucide-react';
+import { generateReceipt, printToBluetoothPrinter } from '../../services/escposPrinter';
 
 interface ReceiptModalProps {
   sale: Sale;
@@ -9,11 +10,45 @@ interface ReceiptModalProps {
 }
 
 export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => {
-  const { formatMoney, stores } = useBakery();
+  const { formatMoney, stores, company } = useBakery();
+  const [isPrinting, setIsPrinting] = useState<boolean>(false);
   const currentStore = stores.find((s) => s.id === sale.storeId) || stores[0];
 
-  const handlePrint = () => {
+  const handleBrowserPrint = () => {
     window.print();
+  };
+
+  const handleThermalPrint = async () => {
+    setIsPrinting(true);
+
+    // Génère les données pour le ticket ESC/POS
+    const receiptBuffer = generateReceipt({
+      store: {
+        name: currentStore.name,
+        location: currentStore.location,
+        phone: currentStore.phone || '',
+        rccm: company.rccm,
+        taxpayerAccount: company.taxpayerAccount,
+      },
+      saleId: sale.id,
+      date: new Date(sale.date),
+      items: sale.items.map(item => ({
+        name: item.name,
+        quantity: item.quantity,
+        price: item.unitPrice,
+      })),
+      subtotal: sale.subtotal,
+      discountAmount: sale.discountAmount || 0,
+      total: sale.total,
+      paymentMethod: sale.paymentMethod,
+      amountPaid: sale.amountPaid,
+      change: sale.changeReturned,
+      cashierName: sale.cashierName,
+      tvaRate: sale.total > 0 ? (sale.vatAmount / sale.total) * 100 : 0,
+    });
+
+    await printToBluetoothPrinter(receiptBuffer);
+    setIsPrinting(false);
   };
 
   const getPaymentLabel = (method: string) => {
@@ -70,7 +105,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => 
               <p className="text-[11px] font-bold text-stone-700 uppercase">{currentStore.name}</p>
               <p className="text-[10px] text-stone-600">{currentStore.location}</p>
               <p className="text-[10px] text-stone-600">Tél : {currentStore.phone}</p>
-              <p className="text-[9px] text-stone-500 mt-1">RC : CI-ABJ-2024-B-14529 • CC : 2419082</p>
+              <p className="text-[9px] text-stone-500 mt-1">RC : {company.rccm} • CC : {company.taxpayerAccount}</p>
             </div>
 
             {/* Ticket Info */}
@@ -116,7 +151,7 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => 
             {/* Totals Calculation */}
             <div className="py-3 border-b border-dashed border-stone-300 space-y-1 text-xs">
               <div className="flex justify-between">
-                <span className="text-stone-600">Sous-total :</span>
+                <span className="text-stone-600">Sous-total TTC :</span>
                 <span>{sale.subtotal} FCFA</span>
               </div>
               {sale.discountAmount > 0 && (
@@ -125,6 +160,14 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => 
                   <span>-{sale.discountAmount} FCFA</span>
                 </div>
               )}
+              <div className="flex justify-between text-stone-600">
+                <span>Total HT :</span>
+                <span>{sale.total - sale.vatAmount} FCFA</span>
+              </div>
+              <div className="flex justify-between text-stone-600">
+                <span>TVA (dont) :</span>
+                <span>{sale.vatAmount} FCFA</span>
+              </div>
               <div className="flex justify-between items-center text-sm font-black pt-1 border-t border-stone-300 text-stone-900">
                 <span>TOTAL À PAYER :</span>
                 <span className="text-base text-amber-800">{formatMoney(sale.total)}</span>
@@ -167,11 +210,19 @@ export const ReceiptModal: React.FC<ReceiptModalProps> = ({ sale, onClose }) => 
         {/* Modal Actions */}
         <div className="p-4 bg-stone-900 border-t border-stone-800 flex gap-3">
           <button
-            onClick={handlePrint}
-            className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs shadow-md transition-colors"
+            onClick={handleBrowserPrint}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-stone-700 hover:bg-stone-600 text-stone-100 font-bold text-xs shadow-md transition-colors"
           >
             <Printer className="w-4 h-4" />
-            <span>Imprimer Ticket (80mm)</span>
+            <span>Navigateur</span>
+          </button>
+          <button
+            onClick={handleThermalPrint}
+            disabled={isPrinting}
+            className="flex-1 flex items-center justify-center gap-2 py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:bg-amber-500/50 text-stone-950 font-bold text-xs shadow-md transition-colors"
+          >
+            <Bluetooth className={`w-4 h-4 ${isPrinting ? 'animate-pulse' : ''}`} />
+            <span>{isPrinting ? 'Impression...' : 'Thermal BT'}</span>
           </button>
           <button
             onClick={onClose}

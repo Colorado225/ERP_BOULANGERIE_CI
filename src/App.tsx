@@ -5,6 +5,8 @@
 
 import React from 'react';
 import { BakeryProvider, useBakery } from './context/BakeryContext';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import { LoginView } from './components/auth/LoginView';
 import { Header } from './components/layout/Header';
 import { Sidebar } from './components/layout/Sidebar';
 import { DashboardView } from './components/dashboard/DashboardView';
@@ -13,6 +15,7 @@ import { ProductionView } from './components/production/ProductionView';
 import { RecipesView } from './components/recipes/RecipesView';
 import { ProductsView } from './components/products/ProductsView';
 import { InventoryView } from './components/inventory/InventoryView';
+import { StockMovementsView } from './components/inventory/StockMovementsView';
 import { PurchasesView } from './components/purchases/PurchasesView';
 import { CustomersView } from './components/customers/CustomersView';
 import { LossesView } from './components/losses/LossesView';
@@ -39,6 +42,8 @@ const MainLayout: React.FC = () => {
         return <ProductsView />;
       case 'inventory':
         return <InventoryView />;
+      case 'stock_movements':
+        return <StockMovementsView />;
       case 'purchases':
         return <PurchasesView />;
       case 'customers':
@@ -63,7 +68,7 @@ const MainLayout: React.FC = () => {
       <Header />
       <div className="flex-1 flex overflow-hidden">
         <Sidebar />
-        <main className="flex-1 flex overflow-hidden">
+        <main className="flex-1 flex overflow-y-auto overflow-x-hidden">
           {renderActiveView()}
         </main>
       </div>
@@ -79,10 +84,34 @@ const MainLayout: React.FC = () => {
   );
 };
 
-export default function App() {
+/**
+ * Garde d'authentification : affiche l'écran de connexion tant qu'aucune
+ * session n'est active, puis l'application complète.
+ */
+const AuthGate: React.FC = () => {
+  const { user, isRestoring } = useAuth();
+
+  if (isRestoring) {
+    return (
+      <div className="min-h-screen bg-stone-950 text-stone-400 flex items-center justify-center text-sm">
+        Restauration de la session…
+      </div>
+    );
+  }
+
+  if (!user) return <LoginView />;
+
   return (
     <BakeryProvider>
       <MainLayout />
     </BakeryProvider>
+  );
+};
+
+export default function App() {
+  return (
+    <AuthProvider>
+      <AuthGate />
+    </AuthProvider>
   );
 }

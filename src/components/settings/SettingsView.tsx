@@ -20,15 +20,32 @@ export const SettingsView: React.FC = () => {
     setCurrentStoreId,
     currency,
     setCurrency,
+    company,
+    updateCompany,
     resetToDemoData,
     exportBackupJson,
     importBackupJson,
   } = useBakery();
 
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [establishmentName, setEstablishmentName] = useState<string>('Maison du Pain & Pâtisserie d’Ivoire');
-  const [legalId, setLegalId] = useState<string>('CI-ABJ-2024-B-14529');
-  const [defaultVatRate, setDefaultVatRate] = useState<number>(0);
+
+  // Champs édités localement puis enregistrés via updateCompany,
+  // afin que le RCCM et les paramètres fiscaux alimentent réellement
+  // les tickets et exports (au lieu d'états locaux non persistés).
+  const [establishmentName, setEstablishmentName] = useState<string>(company.establishmentName);
+  const [legalId, setLegalId] = useState<string>(company.rccm);
+  const [taxpayerAccount, setTaxpayerAccount] = useState<string>(company.taxpayerAccount);
+  const [defaultVatRate, setDefaultVatRate] = useState<number>(company.defaultVatRate);
+
+  const handleSaveCompany = () => {
+    updateCompany({
+      establishmentName,
+      rccm: legalId,
+      taxpayerAccount,
+      defaultVatRate,
+      currency,
+    });
+  };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -79,11 +96,21 @@ export const SettingsView: React.FC = () => {
             </div>
 
             <div>
-              <label className="font-semibold text-stone-300">Registre du Commerce (RCCM / N° Contribuable) :</label>
+              <label className="font-semibold text-stone-300">Registre du Commerce (RCCM) :</label>
               <input
                 type="text"
                 value={legalId}
                 onChange={(e) => setLegalId(e.target.value)}
+                className="w-full mt-1 bg-stone-950 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 font-mono"
+              />
+            </div>
+
+            <div>
+              <label className="font-semibold text-stone-300">Compte Contribuable (CC / DGI) :</label>
+              <input
+                type="text"
+                value={taxpayerAccount}
+                onChange={(e) => setTaxpayerAccount(e.target.value)}
                 className="w-full mt-1 bg-stone-950 border border-stone-700 rounded-xl px-3 py-2 text-stone-100 font-mono"
               />
             </div>
@@ -128,6 +155,15 @@ export const SettingsView: React.FC = () => {
                 <span className="text-[10px] text-stone-500">Exonération habituelle sur pain brut</span>
               </div>
             </div>
+
+            <button
+              type="button"
+              onClick={handleSaveCompany}
+              className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-bold text-xs shadow-md transition-colors"
+            >
+              <CheckCircle className="w-4 h-4" />
+              <span>Enregistrer l'identité & les paramètres fiscaux</span>
+            </button>
           </div>
         </div>
 

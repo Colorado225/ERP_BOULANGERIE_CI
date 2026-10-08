@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useBakery } from '../../context/BakeryContext';
 import { Product, ProductCategory } from '../../types/bakery';
+import { defaultVatRateForCategory } from '../../utils/fiscalite';
 import {
   Package,
   Plus,
@@ -32,7 +33,7 @@ import {
 } from '../ui';
 
 export const ProductsView: React.FC = () => {
-  const { products, recipes, formatMoney, addProduct, updateProduct, deleteProduct } = useBakery();
+  const { products, recipes, formatMoney, addProduct, updateProduct, deleteProduct, writeStoreId } = useBakery();
 
   const [search, setSearch] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
@@ -109,6 +110,7 @@ export const ProductsView: React.FC = () => {
         imageIcon,
         description,
         recipeId: recipeId || undefined,
+        batches: editingProduct.batches || [],
       });
     } else {
       addProduct({
@@ -117,15 +119,16 @@ export const ProductsView: React.FC = () => {
         category,
         price,
         costPrice,
-        vatRate: category === 'patisseries' || category === 'boissons' ? 18 : 0,
+        vatRate: defaultVatRateForCategory(category),
         stock,
         minStock,
         unit,
         imageIcon,
         description,
         recipeId: recipeId || undefined,
-        storeId: 'store-1',
+        storeId: writeStoreId,
         isActive: true,
+        batches: [],
       });
     }
     setIsAddModalOpen(false);
