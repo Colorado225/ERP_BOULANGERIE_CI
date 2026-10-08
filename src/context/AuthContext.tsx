@@ -33,23 +33,42 @@ const AuthContext = createContext<AuthContextType | null>(null);
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<SessionUser | null>(null);
-  const [isRestoring, setIsRestoring] = useState<boolean>(false);
+  const [isRestoring, setIsRestoring] = useState<boolean>(true);
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // MODE DÉMONSTRATION : connexion automatique pour tester les fonctionnalités
+  // Restauration de session : jeton -> GET /api/auth/me.
+  // Démo automatique uniquement en DEV et sans jeton existant.
   useEffect(() => {
-    // Utilisateur admin pré-rempli pour la démonstration
-    const demoUser: SessionUser = {
-      id: 'demo-gerant-001',
-      name: 'Gérant Boulangerie',
-      email: 'demo@boulangerie.ci',
-      role: 'gerant',
-      storeId: 'store-001',
-      permissions: ['*']
+    const restore = async () => {
+      setIsRestoring(true);
+      try {
+        if (!getToken()) {
+          if (import.meta.env.DEV) {
+            const demoUser: SessionUser = {
+              id: 'demo-gerant-001',
+              name: 'Gérant Boulangerie',
+              email: 'demo@boulangerie.ci',
+              role: 'gerant',
+              storeId: 'store-001',
+              permissions: ['*'],
+            };
+            setUser(demoUser);
+          } else {
+            setUser(null);
+          }
+          return;
+        }
+        const profile = await apiMe();
+        setUser(profile);
+      } catch {
+        apiLogout();
+        setUser(null);
+      } finally {
+        setIsRestoring(false);
+      }
     };
-    setUser(demoUser);
-    setIsRestoring(false);
+    void restore();
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
@@ -72,7 +91,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const can = useCallback(
-    (permission: string) => Boolean(user?.permissions?.includes(permission)),
+    (permission: string) =>
+      Boolean(
+        user?.permissions?.includes('*') ||
+          user?.permissions?.includes(permission),
+      ),
     [user]
   );
 

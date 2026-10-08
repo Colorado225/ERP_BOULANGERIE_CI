@@ -13,8 +13,8 @@
 /** Base URL de l'API. Vide en dev → on s'appuie sur le proxy Vite `/api`. */
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
 
-/** URL d'authentification Neon Auth fournie - DÉSACTIVÉ pour démonstration locale */
-const NEON_AUTH_URL = "/api/auth";
+/** URL d'authentification locale (POST /api/auth/login). */
+const NEON_AUTH_URL = "/api/auth/login";
 
 const TOKEN_KEY = "boulangerie_pro_token";
 
