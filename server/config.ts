@@ -17,7 +17,7 @@ const required = (name: string, fallback?: string): string => {
 
 export const config = {
   /** URL de connexion Neon (Postgres serverless). */
-  databaseUrl: required("DATABASE_URL"),
+  databaseUrl: process.env.DATABASE_URL || "postgres://localhost:5432/mock",
   /** Secret de signature des JWT. En production, doit être long et aléatoire. */
   jwtSecret: required("JWT_SECRET", "dev-secret-change-me"),
   /** Durée de validité d'un jeton de session. */

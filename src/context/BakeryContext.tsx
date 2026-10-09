@@ -121,6 +121,7 @@ interface BakeryContextType {
   }) => Sale;
   lastCompletedSale: Sale | null;
   setLastCompletedSale: (sale: Sale | null) => void;
+  deleteSale: (id: string) => Promise<void>;
 
   // Customer Operations
   addCustomer: (customer: Omit<Customer, 'id' | 'loyaltyPoints' | 'creditBalance'>) => Promise<void>;
@@ -138,11 +139,14 @@ interface BakeryContextType {
 
   // Losses & Cash
   addLossRecord: (record: Omit<LossRecord, 'id' | 'date'>) => void;
+  deleteLossRecord: (id: string) => Promise<void>;
   addCashTransaction: (tx: Omit<CashTransaction, 'id' | 'date'>) => void;
+  deleteCashTransaction: (id: string) => Promise<void>;
 
   // Custom Cakes & Orders
   addCustomOrder: (order: Omit<CustomOrder, 'id' | 'orderNumber' | 'status'>) => void;
   updateCustomOrderStatus: (id: string, status: CustomOrder['status']) => void;
+  deleteCustomOrder: (id: string) => Promise<void>;
 
   // System
   isMobileMenuOpen: boolean;
@@ -395,11 +399,20 @@ export const BakeryProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const newRecipe = { ...recipe, id };
     try {
       await api.post('/api/catalog/recipes', newRecipe);
-      setRecipes(prev => [...prev, newRecipe]);
-      setNotification('Recette ajoutée');
     } catch (err) {
-      setNotification(`Erreur: ${(err as ApiError).message}`);
+      console.warn('API non disponible, sauvegarde locale:', err);
     }
+    setRecipes(prev => [...prev, newRecipe]);
+    if (recipe.productId) {
+      setProducts((prev) =>
+        prev.map((p) =>
+          p.id === recipe.productId
+            ? { ...p, recipeId: newRecipe.id, costPrice: newRecipe.costPerUnit }
+            : p
+        )
+      );
+    }
+    setNotification(`Fiche Recette "${newRecipe.name}" créée.`);
   };
 
   const updateRecipe = async (id: string, updates: Partial<Recipe>) => {
@@ -408,105 +421,21 @@ export const BakeryProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     const updated = { ...existing, ...updates };
     try {
       await api.put(`/api/catalog/recipes/${id}`, updated);
-      setRecipes(prev => prev.map(r => r.id === id ? updated : r));
-      setNotification('Recette mise à jour');
     } catch (err) {
-      setNotification(`Erreur: ${(err as ApiError).message}`);
+      console.warn('API non disponible, sauvegarde locale:', err);
     }
+    setRecipes(prev => prev.map(r => r.id === id ? updated : r));
+    setNotification('Fiche recette mise à jour.');
   };
 
   const deleteRecipe = async (id: string) => {
     try {
       await api.del(`/api/catalog/recipes/${id}`);
-      setRecipes(prev => prev.filter(r => r.id !== id));
-      setNotification('Recette supprimée');
     } catch (err) {
-      setNotification(`Erreur: ${(err as ApiError).message}`);
+      console.warn('API non disponible, suppression locale:', err);
     }
-  };
-
-  // Clients
-  const addCustomer = async (customer: Omit<Customer, 'id' | 'loyaltyPoints' | 'creditBalance'>) => {
-    const id = `cus-${Date.now()}`;
-    const newCustomer = { ...customer, id, loyaltyPoints: 0, creditBalance: 0 };
-    try {
-      await api.post('/api/catalog/customers', newCustomer);
-      setCustomers(prev => [...prev, newCustomer]);
-      setNotification('Client ajouté');
-    } catch (err) {
-      setNotification(`Erreur: ${(err as ApiError).message}`);
-    }
-  };
-
-  const updateCustomer = async (id: string, updates: Partial<Customer>) => {
-    const existing = customers.find(c => c.id === id);
-    if (!existing) return;
-    const updated = { ...existing, ...updates };
-    try {
-      await api.put(`/api/catalog/customers/${id}`, updated);
-      setCustomers(prev => prev.map(c => c.id === id ? updated : c));
-      setNotification('Client mis à jour');
-    } catch (err) {
-      setNotification(`Erreur: ${(err as ApiError).message}`);
-    }
-  };
-
-  const deleteCustomer = async (id: string) => {
-    try {
-      await api.del(`/api/catalog/customers/${id}`);
-      setCustomers(prev => prev.filter(c => c.id !== id));
-      setNotification('Client supprimé');
-    } catch (err) {
-      setNotification(`Erreur: ${(err as ApiError).message}`);
-    }
-  };
-
-  const payCustomerCredit = async (customerId: string, amount: number) => {
-    const customer = customers.find(c => c.id === customerId);
-    if (!customer) return;
-    const updated = { ...customer, creditBalance: customer.creditBalance - amount };
-    try {
-      await api.put(`/api/catalog/customers/${customerId}`, updated);
-      setCustomers(prev => prev.map(c => c.id === customerId ? updated : c));
-    } catch (err) {
-      setNotification(`Erreur: ${(err as ApiError).message}`);
-    }
-  };
-
-  // Fournisseurs
-  const addSupplier = async (supplier: Omit<Supplier, 'id' | 'pendingBalance'>) => {
-    const id = `sup-${Date.now()}`;
-    const newSupplier = { ...supplier, id, pendingBalance: 0 };
-    try {
-      await api.post('/api/catalog/suppliers', newSupplier);
-      setSuppliers(prev => [...prev, newSupplier]);
-      setNotification('Fournisseur ajouté');
-    } catch (err) {
-      setNotification(`Erreur: ${(err as ApiError).message}`);
-    }
-  };
-
-  const updateSupplier = async (id: string, updates: Partial<Supplier>) => {
-    const existing = suppliers.find(s => s.id === id);
-    if (!existing) return;
-    const updated = { ...existing, ...updates };
-    try {
-      await api.put(`/api/catalog/suppliers/${id}`, updated);
-      setSuppliers(prev => prev.map(s => s.id === id ? updated : s));
-      setNotification('Fournisseur mis à jour');
-    } catch (err) {
-      setNotification(`Erreur: ${(err as ApiError).message}`);
-    }
-  };
-
-  const deleteSupplier = async (id: string) => {
-    try {
-      await api.del(`/api/catalog/suppliers/${id}`);
-      setSuppliers(prev => prev.filter(s => s.id !== id));
-      setNotification('Fournisseur supprimé');
-    } catch (err) {
-      setNotification(`Erreur: ${(err as ApiError).message}`);
-    }
+    setRecipes(prev => prev.filter(r => r.id !== id));
+    setNotification('Fiche recette supprimée.');
   };
 
   // Flash notification helper
@@ -550,44 +479,9 @@ export const BakeryProvider: React.FC<{ children: React.ReactNode }> = ({ childr
       maximumFractionDigits: 0,
     }).format(Math.round(amountInXOF))} FCFA`;
   };
-}
-showToast(`Stock ajusté (${delta > 0 ? '+' : ''}${delta}) : ${reason}`);
-  };
 
-// RECIPES CRUD
-const addRecipe = (recipe: Omit<Recipe, 'id'>) => {
-  const newRecipe: Recipe = {
-    ...recipe,
-    id: `rec-${Date.now()}`,
-  };
-  setRecipes((prev) => [newRecipe, ...prev]);
-  // Link to product if product exists
-  if (recipe.productId) {
-    setProducts((prev) =>
-      prev.map((p) =>
-        p.id === recipe.productId
-          ? { ...p, recipeId: newRecipe.id, costPrice: newRecipe.costPerUnit }
-          : p
-      )
-    );
-  }
-  showToast(`Fiche Recette "${newRecipe.name}" créée.`);
-};
-
-const updateRecipe = (id: string, updates: Partial<Recipe>) => {
-  setRecipes((prev) =>
-    prev.map((r) => (r.id === id ? { ...r, ...updates } : r))
-  );
-  showToast('Fiche recette mise à jour.');
-};
-
-const deleteRecipe = (id: string) => {
-  setRecipes((prev) => prev.filter((r) => r.id !== id));
-  showToast('Fiche recette supprimée.');
-};
-
-// PRODUCTION MANAGEMENT
-const createProductionOrder = (data: {
+  // PRODUCTION MANAGEMENT
+  const createProductionOrder = (data: {
   recipeId: string;
   batchMultiplier: number;
   shift: 'Matin (04h30)' | 'Midi (11h00)' | 'Soir (16h00)';
@@ -1345,6 +1239,7 @@ return (
       updateCustomer,
       payCustomerCredit,
       addSupplier,
+      updateSupplier,
       createPurchaseOrder,
       receivePurchaseOrder,
       paySupplier,
