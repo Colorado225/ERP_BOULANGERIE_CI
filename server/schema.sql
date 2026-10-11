@@ -35,12 +35,20 @@ CREATE TABLE IF NOT EXISTS users (
   id             TEXT PRIMARY KEY,
   name           TEXT NOT NULL,
   email          TEXT UNIQUE NOT NULL,
-  password_hash  TEXT NOT NULL,
+  -- Déprécié : les mots de passe sont gérés par Neon Auth (lot 1). Conservé
+  -- pour compatibilité, plus renseigné par l'application.
+  password_hash  TEXT,
+  -- Identifiant Neon Auth (claim `sub` du jeton). Lié à la première connexion.
+  auth_user_id   TEXT UNIQUE,
   role           TEXT NOT NULL CHECK (role IN ('gerant', 'caissier', 'boulanger', 'magasinier')),
   store_id       TEXT REFERENCES stores(id),
   is_active      BOOLEAN NOT NULL DEFAULT true,
   created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Migrations idempotentes pour les bases créées avant le lot 1.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS auth_user_id TEXT UNIQUE;
+ALTER TABLE users ALTER COLUMN password_hash DROP NOT NULL;
 
 -- Produits finis.
 CREATE TABLE IF NOT EXISTS products (

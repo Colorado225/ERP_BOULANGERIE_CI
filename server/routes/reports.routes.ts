@@ -14,12 +14,15 @@ import { getRecipesWithIngredients } from "../services/recipeQueries";
 import { getProductionOrdersByStore } from "../services/productionQueries";
 import { getPurchaseOrdersByStore } from "../services/purchaseQueries";
 import { getSalesForStore } from "../services/salesQueries";
+import { requireAuth, requireStore, type AuthedRequest } from "../auth";
 
 export const reportsRouter = Router();
 
-/** StoreId de la requête, avec repli sûr pour les appels sans session. */
-const storeOf = (req: unknown): string =>
-  (req as { user?: { storeId?: string } }).user?.storeId ?? "store-1";
+/** Tableau de bord : session et boutique obligatoires. */
+reportsRouter.use(requireAuth, requireStore);
+
+/** Boutique de l'utilisateur authentifié (garantie par `requireStore`). */
+const storeOf = (req: AuthedRequest): string => req.user!.storeId as string;
 
 // ------------------------------------------------------------------
 // Dashboard

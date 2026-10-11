@@ -2,12 +2,12 @@
  * Routes d'administration : paramètres légaux/fiscaux de l'entreprise,
  * gestion des utilisateurs, et instantané global (sauvegarde).
  */
+import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { query, queryOne } from "../db";
 import {
   requireAuth,
   requireRole,
-  hashPassword,
   type AuthedRequest,
   type Role,
 } from "../auth";
@@ -54,30 +54,36 @@ adminRouter.put("/company", requireRole("gerant"), async (req, res) => {
 
 /* ---------------------------------- USERS ---------------------------------- */
 
-/** Création d'un utilisateur (gérant uniquement). */
+/**
+ * Création d'une fiche utilisateur (gérant uniquement).
+ * Le mot de passe est géré par Neon Auth : la fiche est liée au compte Neon
+ * lors de la première connexion, si l'e-mail correspond et est vérifié.
+ */
 adminRouter.post("/users", requireRole("gerant"), async (req, res) => {
   const u = req.body as {
-    id: string;
-    name: string;
-    email: string;
-    password: string;
-    role: Role;
+    name?: string;
+    email?: string;
+    role?: Role;
     storeId?: string;
   };
 
-  if (!u.email || !u.password) {
-    res.status(400).json({ error: "E-mail et mot de passe requis." });
+  const ROLES: Role[] = ["gerant", "caissier", "boulanger", "magasinier"];
+  if (!u.name || !u.email || !u.role) {
+    res.status(400).json({ error: "Nom, e-mail et rôle requis." });
+    return;
+  }
+  if (!ROLES.includes(u.role)) {
+    res.status(400).json({ error: "Rôle inconnu." });
     return;
   }
 
   await query(
     `INSERT INTO users (id, name, email, password_hash, role, store_id)
-     VALUES ($1,$2,$3,$4,$5,$6)`,
+     VALUES ($1,$2,$3,NULL,$4,$5)`,
     [
-      u.id,
-      u.name,
+      randomUUID(),
+      u.name.trim(),
       u.email.toLowerCase().trim(),
-      hashPassword(u.password),
       u.role,
       u.storeId ?? null,
     ],

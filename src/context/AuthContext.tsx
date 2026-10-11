@@ -1,16 +1,17 @@
 /**
- * Contexte d'authentification et de permissions (chantier 1.2).
+ * Contexte d'authentification et de permissions (lot 1).
  *
- * - Restaure la session au démarrage (jeton → /api/auth/me).
- * - Expose l'utilisateur courant, son rôle et ses permissions.
- * - Fournit `can()` pour masquer les actions non autorisées dans l'interface.
+ * - Connexion et session : Neon Auth (via le client de `services/api`).
+ * - Le profil (rôle, boutique, permissions) est chargé depuis l'API, qui le lit en base.
+ * - Aucun compte de démonstration : toute session passe par Neon Auth.
+ * - `can()` vérifie les permissions renvoyées par le serveur.
  */
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import {
   login as apiLogin,
   logout as apiLogout,
-  me as apiMe,
-  getToken,
+  restoreSession,
+  ApiError,
   type SessionUser,
 } from '../services/api';
 
@@ -22,49 +23,24 @@ interface AuthContextType {
   isLoggingIn: boolean;
   error: string | null;
   login: (email: string, password: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
   /** Indique si l'utilisateur courant possède une permission. */
   can: (permission: string) => boolean;
   /** Indique si l'utilisateur courant a au moins l'un des rôles donnés. */
   hasRole: (...roles: SessionUser['role'][]) => boolean;
 }
 
-const DEMO_USERS: Record<string, SessionUser> = {
-  'gerant@boulangeriepro.ci': {
-    id: 'demo-gerant-001',
-    name: 'Gérant Boulangerie',
-    email: 'gerant@boulangeriepro.ci',
-    role: 'gerant',
-    storeId: 'store-001',
-    permissions: ['*'],
-  },
-  'caissier@boulangeriepro.ci': {
-    id: 'demo-caissier-001',
-    name: 'Caissier Principal',
-    email: 'caissier@boulangeriepro.ci',
-    role: 'caissier',
-    storeId: 'store-001',
-    permissions: ['pos:read', 'pos:write', 'sales:read', 'sales:write', 'cash:read', 'cash:write'],
-  },
-  'boulanger@boulangeriepro.ci': {
-    id: 'demo-boulanger-001',
-    name: 'Chef Boulanger',
-    email: 'boulanger@boulangeriepro.ci',
-    role: 'boulanger',
-    storeId: 'store-001',
-    permissions: ['production:read', 'production:write', 'recipes:read', 'stock:read'],
-  },
-  'magasinier@boulangeriepro.ci': {
-    id: 'demo-magasinier-001',
-    name: 'Magasinier Stock',
-    email: 'magasinier@boulangeriepro.ci',
-    role: 'magasinier',
-    storeId: 'store-001',
-    permissions: ['stock:read', 'stock:write', 'purchases:read', 'purchases:write', 'suppliers:read'],
-  },
-};
-
 const AuthContext = createContext<AuthContextType | null>(null);
+
+/** Message lisible pour une erreur de connexion ou de session. */
+const messageFor = (err: unknown): string => {
+  if (err instanceof ApiError) {
+    if (err.status === 403) return err.message;
+    if (err.status === 401) return 'Identifiants invalides.';
+    return err.message;
+  }
+  return 'Échec de la connexion.';
+};
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<SessionUser | null>(null);
@@ -72,34 +48,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Restauration de session : jeton -> GET /api/auth/me.
-  // Démo automatique sans jeton existant.
+  // Restauration de session au chargement : session Neon -> profil API.
   useEffect(() => {
+    let cancelled = false;
     const restore = async () => {
-      setIsRestoring(true);
       try {
-        if (!getToken()) {
-          const demoUser: SessionUser = {
-            id: 'demo-gerant-001',
-            name: 'Gérant Boulangerie',
-            email: 'demo@boulangerie.ci',
-            role: 'gerant',
-            storeId: 'store-001',
-            permissions: ['*'],
-          };
-          setUser(demoUser);
-          return;
+        const profile = await restoreSession();
+        if (!cancelled) setUser(profile);
+      } catch (err) {
+        if (!cancelled) {
+          setUser(null);
+          setError(messageFor(err));
         }
-        const profile = await apiMe();
-        setUser(profile);
-      } catch {
-        apiLogout();
-        setUser(null);
       } finally {
-        setIsRestoring(false);
+        if (!cancelled) setIsRestoring(false);
       }
     };
     void restore();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
@@ -109,37 +77,26 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const profile = await apiLogin(email, password);
       setUser(profile);
     } catch (err) {
-      const lower = email.toLowerCase().trim();
-      const demoUser = DEMO_USERS[lower];
-      if (demoUser) {
-        setUser(demoUser);
-        setError(null);
-        return;
-      }
-      setError(err instanceof Error ? err.message : 'Échec de la connexion.');
+      setError(messageFor(err));
       throw err;
     } finally {
       setIsLoggingIn(false);
     }
   }, []);
 
-  const logout = useCallback(() => {
-    apiLogout();
+  const logout = useCallback(async () => {
+    await apiLogout();
     setUser(null);
   }, []);
 
   const can = useCallback(
-    (permission: string) =>
-      Boolean(
-        user?.permissions?.includes('*') ||
-          user?.permissions?.includes(permission),
-      ),
-    [user]
+    (permission: string) => Boolean(user?.permissions?.includes(permission)),
+    [user],
   );
 
   const hasRole = useCallback(
     (...roles: SessionUser['role'][]) => Boolean(user && roles.includes(user.role)),
-    [user]
+    [user],
   );
 
   return (

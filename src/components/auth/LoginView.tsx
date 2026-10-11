@@ -3,11 +3,8 @@ import { useAuth } from '../../context/AuthContext';
 import { Wheat, Lock, Mail, AlertCircle, LogIn } from 'lucide-react';
 
 /**
- * Écran de connexion (chantier 1.2).
- *
- * En développement, des boutons de connexion rapide permettent d'entrer avec
- * chacun des quatre rôles pour vérifier le contrôle d'accès sans retenir
- * les identifiants.
+ * Écran de connexion (lot 1). Authentification par e-mail et mot de passe via Neon Auth.
+ * Aucun accès de démonstration.
  */
 export const LoginView: React.FC = () => {
   const { login, isLoggingIn, error } = useAuth();
@@ -23,23 +20,6 @@ export const LoginView: React.FC = () => {
       /* l'erreur est exposée via le contexte */
     }
   };
-
-  const quickLogin = async (demoEmail: string, demoPassword: string) => {
-    setEmail(demoEmail);
-    setPassword(demoPassword);
-    try {
-      await login(demoEmail, demoPassword);
-    } catch {
-      /* idem */
-    }
-  };
-
-  const demoAccounts = [
-    { role: 'Gérant', email: 'gerant@boulangeriepro.ci', password: 'gerant123', color: 'text-amber-400' },
-    { role: 'Caissier', email: 'caissier@boulangeriepro.ci', password: 'caisse123', color: 'text-emerald-400' },
-    { role: 'Boulanger', email: 'boulanger@boulangeriepro.ci', password: 'fournil123', color: 'text-orange-400' },
-    { role: 'Magasinier', email: 'magasinier@boulangeriepro.ci', password: 'stock123', color: 'text-sky-400' },
-  ];
 
   return (
     <div className="min-h-screen bg-stone-950 text-stone-100 flex items-center justify-center p-4 font-sans">
@@ -113,29 +93,6 @@ export const LoginView: React.FC = () => {
           </button>
         </form>
 
-        {/* Connexion rapide (démonstration) */}
-        <div className="mt-5 bg-stone-900/60 border border-stone-800 rounded-2xl p-4">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-stone-500 mb-2.5">
-            Accès rapide — démonstration
-          </p>
-          <div className="grid grid-cols-2 gap-2">
-            {demoAccounts.map((acc) => (
-              <button
-                key={acc.role}
-                type="button"
-                onClick={() => quickLogin(acc.email, acc.password)}
-                disabled={isLoggingIn}
-                className="px-3 py-2 rounded-xl bg-stone-950 border border-stone-800 hover:border-amber-500/40 text-left transition-colors disabled:opacity-50"
-              >
-                <span className={`block text-xs font-bold ${acc.color}`}>{acc.role}</span>
-                <span className="block text-[10px] text-stone-500 truncate">{acc.email}</span>
-              </button>
-            ))}
-          </div>
-          <p className="text-[10px] text-stone-600 mt-2.5">
-            Ces comptes sont créés par le seed de démonstration. À remplacer en production.
-          </p>
-        </div>
       </div>
     </div>
   );

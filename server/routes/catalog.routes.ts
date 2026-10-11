@@ -10,8 +10,12 @@
 import { Router } from "express";
 import { query, queryOne, transaction } from "../db";
 import { getRecipesWithIngredients } from "../services/recipeQueries";
+import { requireAuth, requirePermission } from "../auth";
 
 export const catalogRouter = Router();
+
+/** Toutes les routes du catalogue exigent une session valide. */
+catalogRouter.use(requireAuth);
 
 const MATERIAL_COLUMNS = `id, code, name, category, current_stock AS "currentStock", unit,
         min_stock_alert AS "minStockAlert", unit_cost AS "unitCost",
@@ -38,7 +42,7 @@ catalogRouter.get("/stores", async (_req, res) => {
   );
 });
 
-catalogRouter.post("/stores", async (req, res) => {
+catalogRouter.post("/stores", requirePermission("catalog"), async (req, res) => {
   const s = req.body as {
     id?: string; name: string; location: string; phone: string;
     managerName?: string; isMain?: boolean;
@@ -54,7 +58,7 @@ catalogRouter.post("/stores", async (req, res) => {
   res.status(201).json(row);
 });
 
-catalogRouter.put("/stores/:id", async (req, res) => {
+catalogRouter.put("/stores/:id", requirePermission("catalog"), async (req, res) => {
   const s = req.body as {
     name?: string; location?: string; phone?: string;
     managerName?: string; isMain?: boolean;
@@ -78,7 +82,7 @@ catalogRouter.put("/stores/:id", async (req, res) => {
   res.json(result[0]);
 });
 
-catalogRouter.delete("/stores/:id", async (req, res) => {
+catalogRouter.delete("/stores/:id", requirePermission("catalog"), async (req, res) => {
   const result = await query(`DELETE FROM stores WHERE id=$1 RETURNING id`, [req.params.id]);
   if (result.length === 0) return res.status(404).json({ error: "Boutique introuvable." });
   res.json({ deleted: true });
@@ -100,7 +104,7 @@ catalogRouter.get("/products", async (_req, res) => {
   );
 });
 
-catalogRouter.post("/products", async (req, res) => {
+catalogRouter.post("/products", requirePermission("catalog"), async (req, res) => {
   const p = req.body as {
     id?: string; sku: string; name: string; category: string; price: number;
     costPrice?: number; vatRate?: number; stock?: number; minStock?: number;
@@ -130,7 +134,7 @@ catalogRouter.post("/products", async (req, res) => {
   res.status(201).json(row);
 });
 
-catalogRouter.put("/products/:id", async (req, res) => {
+catalogRouter.put("/products/:id", requirePermission("catalog"), async (req, res) => {
   const p = req.body as {
     name?: string; sku?: string; category?: string; price?: number;
     costPrice?: number; vatRate?: number; stock?: number; minStock?: number;
@@ -169,7 +173,7 @@ catalogRouter.put("/products/:id", async (req, res) => {
   res.json(result[0]);
 });
 
-catalogRouter.delete("/products/:id", async (req, res) => {
+catalogRouter.delete("/products/:id", requirePermission("catalog"), async (req, res) => {
   const result = await query(`DELETE FROM products WHERE id=$1 RETURNING id`, [req.params.id]);
   if (result.length === 0) return res.status(404).json({ error: "Produit introuvable." });
   res.json({ deleted: true });
@@ -189,7 +193,7 @@ catalogRouter.get("/materials", async (_req, res) => {
   );
 });
 
-catalogRouter.post("/materials", async (req, res) => {
+catalogRouter.post("/materials", requirePermission("stock"), async (req, res) => {
   const m = req.body as {
     id?: string; code: string; name: string; category?: string;
     currentStock?: number; unit?: string; minStockAlert?: number;
@@ -216,7 +220,7 @@ catalogRouter.post("/materials", async (req, res) => {
   res.status(201).json(row);
 });
 
-catalogRouter.put("/materials/:id", async (req, res) => {
+catalogRouter.put("/materials/:id", requirePermission("stock"), async (req, res) => {
   const m = req.body as {
     name?: string; code?: string; category?: string; currentStock?: number;
     unit?: string; minStockAlert?: number; unitCost?: number;
@@ -249,7 +253,7 @@ catalogRouter.put("/materials/:id", async (req, res) => {
   res.json(result[0]);
 });
 
-catalogRouter.delete("/materials/:id", async (req, res) => {
+catalogRouter.delete("/materials/:id", requirePermission("stock"), async (req, res) => {
   const result = await query(`DELETE FROM raw_materials WHERE id=$1 RETURNING id`, [req.params.id]);
   if (result.length === 0) return res.status(404).json({ error: "Matière introuvable." });
   res.json({ deleted: true });
@@ -267,7 +271,7 @@ catalogRouter.get("/recipes", async (_req, res) => {
   res.json(await getRecipesWithIngredients());
 });
 
-catalogRouter.post("/recipes", async (req, res) => {
+catalogRouter.post("/recipes", requirePermission("production"), async (req, res) => {
   const r = req.body as {
     id?: string; name: string; productId?: string; productName?: string;
     outputYield?: number; outputUnit?: string; preparationTimeMin?: number;
@@ -319,7 +323,7 @@ catalogRouter.post("/recipes", async (req, res) => {
 });
 
 
-catalogRouter.put("/recipes/:id", async (req, res) => {
+catalogRouter.put("/recipes/:id", requirePermission("production"), async (req, res) => {
   const r = req.body as {
     name?: string; productId?: string | null; productName?: string | null;
     outputYield?: number; outputUnit?: string | null;
@@ -386,7 +390,7 @@ catalogRouter.put("/recipes/:id", async (req, res) => {
   }
 });
 
-catalogRouter.delete("/recipes/:id", async (req, res) => {
+catalogRouter.delete("/recipes/:id", requirePermission("production"), async (req, res) => {
   // recipe_ingredients est supprimé en cascade (ON DELETE CASCADE).
   const result = await query(`DELETE FROM recipes WHERE id=$1 RETURNING id`, [req.params.id]);
   if (result.length === 0) return res.status(404).json({ error: "Recette introuvable." });
@@ -408,7 +412,7 @@ catalogRouter.get("/customers", async (_req, res) => {
   );
 });
 
-catalogRouter.post("/customers", async (req, res) => {
+catalogRouter.post("/customers", requirePermission("pos"), async (req, res) => {
   const c = req.body as {
     id?: string; name: string; phone?: string; email?: string; type?: string;
     address?: string; loyaltyPoints?: number; creditBalance?: number;
@@ -430,7 +434,7 @@ catalogRouter.post("/customers", async (req, res) => {
   res.status(201).json(row);
 });
 
-catalogRouter.put("/customers/:id", async (req, res) => {
+catalogRouter.put("/customers/:id", requirePermission("pos"), async (req, res) => {
   const c = req.body as {
     name?: string; phone?: string; email?: string; type?: string;
     address?: string; loyaltyPoints?: number; creditBalance?: number;
@@ -459,7 +463,7 @@ catalogRouter.put("/customers/:id", async (req, res) => {
   res.json(result[0]);
 });
 
-catalogRouter.delete("/customers/:id", async (req, res) => {
+catalogRouter.delete("/customers/:id", requirePermission("pos"), async (req, res) => {
   const result = await query(`DELETE FROM customers WHERE id=$1 RETURNING id`, [req.params.id]);
   if (result.length === 0) return res.status(404).json({ error: "Client introuvable." });
   res.json({ deleted: true });
@@ -480,7 +484,7 @@ catalogRouter.get("/suppliers", async (_req, res) => {
   );
 });
 
-catalogRouter.post("/suppliers", async (req, res) => {
+catalogRouter.post("/suppliers", requirePermission("receiving"), async (req, res) => {
   const s = req.body as {
     id?: string; name: string; contactName?: string; phone?: string;
     email?: string; address?: string; suppliedMaterials?: string[];
@@ -502,7 +506,7 @@ catalogRouter.post("/suppliers", async (req, res) => {
   res.status(201).json(row);
 });
 
-catalogRouter.put("/suppliers/:id", async (req, res) => {
+catalogRouter.put("/suppliers/:id", requirePermission("receiving"), async (req, res) => {
   const s = req.body as {
     name?: string; contactName?: string; phone?: string; email?: string;
     address?: string; suppliedMaterials?: string[]; paymentTerms?: string;
@@ -530,7 +534,7 @@ catalogRouter.put("/suppliers/:id", async (req, res) => {
   res.json(result[0]);
 });
 
-catalogRouter.delete("/suppliers/:id", async (req, res) => {
+catalogRouter.delete("/suppliers/:id", requirePermission("receiving"), async (req, res) => {
   const result = await query(`DELETE FROM suppliers WHERE id=$1 RETURNING id`, [req.params.id]);
   if (result.length === 0) return res.status(404).json({ error: "Fournisseur introuvable." });
   res.json({ deleted: true });

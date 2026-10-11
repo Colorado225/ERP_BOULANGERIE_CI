@@ -13,7 +13,7 @@
  * Remplace l'ancien script `seeds.ts` (supprimé) : c'est le seul seed du projet.
  */
 import { pool, query } from "./db";
-import { hashPassword, type Role } from "./auth";
+import type { Role } from "./auth";
 import { config } from "./config";
 import {
   INITIAL_STORES,
@@ -38,7 +38,6 @@ const USERS: Array<{
   id: string;
   name: string;
   email: string;
-  password: string;
   role: Role;
   storeId: string;
 }> = [
@@ -46,7 +45,6 @@ const USERS: Array<{
     id: "usr-gerant",
     name: "Amadou Kouassi",
     email: "gerant@boulangeriepro.ci",
-    password: "gerant123",
     role: "gerant",
     storeId: "store-1",
   },
@@ -54,7 +52,6 @@ const USERS: Array<{
     id: "usr-caissier",
     name: "Aïcha Diallo",
     email: "caissier@boulangeriepro.ci",
-    password: "caisse123",
     role: "caissier",
     storeId: "store-1",
   },
@@ -62,7 +59,6 @@ const USERS: Array<{
     id: "usr-boulanger",
     name: "Koffi Jean-Luc",
     email: "boulanger@boulangeriepro.ci",
-    password: "fournil123",
     role: "boulanger",
     storeId: "store-1",
   },
@@ -70,7 +66,6 @@ const USERS: Array<{
     id: "usr-magasinier",
     name: "Sylvie Touré",
     email: "magasinier@boulangeriepro.ci",
-    password: "stock123",
     role: "magasinier",
     storeId: "store-1",
   },
@@ -113,8 +108,8 @@ const seed = async () => {
   for (const u of USERS) {
     await query(
       `INSERT INTO users (id, name, email, password_hash, role, store_id)
-       VALUES ($1,$2,$3,$4,$5,$6)`,
-      [u.id, u.name, u.email, hashPassword(u.password), u.role, u.storeId],
+       VALUES ($1,$2,$3,NULL,$4,$5)`,
+      [u.id, u.name, u.email, u.role, u.storeId],
     );
   }
 
@@ -408,12 +403,12 @@ const seed = async () => {
   }
 
   console.log("[seed] ✅ Données de démonstration insérées.");
-  console.log("[seed] Comptes de connexion :");
+  console.log("[seed] Comptes de démonstration (à créer dans Neon Auth) :");
   for (const u of USERS) {
-    console.log(`        ${u.role.padEnd(12)} ${u.email}  /  ${u.password}`);
+    console.log(`        ${u.role.padEnd(12)} ${u.email}`);
   }
   console.log(
-    "[seed] ⚠️  Changez ces mots de passe avant toute mise en production.",
+    "[seed] La fiche se lie au compte Neon à la première connexion (e-mail vérifié)."
   );
 };
 

@@ -16,23 +16,23 @@ import { createProductionOrder, updateProductionOrder } from "../services/produc
 import { getProductionOrder, getProductionOrdersByStore } from "../services/productionQueries";
 import { createPurchaseOrder, getPurchaseOrder, getPurchaseOrdersByStore, updatePurchaseOrderStatus } from "../services/purchaseService";
 import { createStockMovement, adjustMaterialStock, createLoss } from "../services/inventoryService";
+import { requireAuth, requireStore, requirePermission, resolveStoreId, type AuthedRequest } from "../auth";
 
 export const operationsRouter = Router();
 
-operationsRouter.use((_req, res, next) => {
-  next();
-});
+/** Toutes les opérations exigent une session et une boutique rattachée. */
+operationsRouter.use(requireAuth, requireStore);
 
 /** ------------------------------------------------------------------ */
 /**  SALES                                                              */
 /** ------------------------------------------------------------------ */
 
-operationsRouter.get("/sales", async (_req, res) => {
-  const sales = await getSalesForStore("store-1", 500);
+operationsRouter.get("/sales", async (req: AuthedRequest, res) => {
+  const sales = await getSalesForStore(req.user!.storeId as string, 500);
   res.json(sales);
 });
 
-operationsRouter.get("/sales/:id", async (req, res) => {
+operationsRouter.get("/sales/:id", async (req: AuthedRequest, res) => {
   const sale = await getSale(req.params.id);
   if (!sale) return res.status(404).json({ error: "Vente introuvable." });
   res.json(sale);
@@ -40,7 +40,8 @@ operationsRouter.get("/sales/:id", async (req, res) => {
 
 operationsRouter.post(
   "/sales",
-  async (req, res) => {
+  requirePermission("pos"),
+  async (req: AuthedRequest, res) => {
     const s = req.body as {
       id?: string; items: Array<{ productId: string; quantity: number; unitPrice?: number; name?: string }>;
       subtotal?: number; discountAmount?: number; vatAmount?: number;
@@ -48,12 +49,9 @@ operationsRouter.post(
       changeReturned?: number; customerId?: string; customerName?: string;
       cashierName?: string; storeId?: string; notes?: string;
     };
-    const cashierName = s.cashierName ??
-      (req as { user?: { name?: string } }).user?.name ??
-      "Caisse";
-    const storeId = s.storeId ??
-      (req as { user?: { storeId?: string } }).user?.storeId ??
-      "store-1";
+    const user = req.user!;
+    const cashierName = user.name;
+    const storeId = resolveStoreId(user, s.storeId);
 
     try {
       const sale = await createSale({
@@ -83,12 +81,12 @@ operationsRouter.post(
 /**  PRODUCTION                                                         */
 /** ------------------------------------------------------------------ */
 
-operationsRouter.get("/production-orders", async (_req, res) => {
-  const orders = await getProductionOrdersByStore("store-1", 500);
+operationsRouter.get("/production-orders", async (req: AuthedRequest, res) => {
+  const orders = await getProductionOrdersByStore(req.user!.storeId as string, 500);
   res.json(orders);
 });
 
-operationsRouter.get("/production-orders/:id", async (req, res) => {
+operationsRouter.get("/production-orders/:id", async (req: AuthedRequest, res) => {
   const order = await getProductionOrder(req.params.id);
   if (!order) return res.status(404).json({ error: "Ordre introuvable." });
   res.json(order);
@@ -96,7 +94,8 @@ operationsRouter.get("/production-orders/:id", async (req, res) => {
 
 operationsRouter.post(
   "/production-orders",
-  async (req, res) => {
+  requirePermission("production"),
+  async (req: AuthedRequest, res) => {
     const o = req.body as {
       id?: string; recipeId?: string; recipeName?: string; productId?: string;
       productName?: string; batchMultiplier?: number; targetQuantity?: number;
@@ -117,7 +116,7 @@ operationsRouter.post(
         completedTime: o.completedTime,
         bakerName: o.bakerName,
         shift: o.shift,
-        storeId: o.storeId ?? "store-1",
+        storeId: resolveStoreId(req.user!, o.storeId),
         notes: o.notes,
       });
       res.status(201).json(order);
@@ -130,7 +129,8 @@ operationsRouter.post(
 
 operationsRouter.put(
   "/production-orders/:id",
-  async (req, res) => {
+  requirePermission("manage"),
+  async (req: AuthedRequest, res) => {
     const o = req.body as {
       recipeId?: string; recipeName?: string; productId?: string;
       productName?: string; batchMultiplier?: number; targetQuantity?: number;
@@ -153,12 +153,12 @@ operationsRouter.put(
 /**  PURCHASES                                                          */
 /** ------------------------------------------------------------------ */
 
-operationsRouter.get("/purchase-orders", async (_req, res) => {
-  const orders = await getPurchaseOrdersByStore("store-1", 500);
+operationsRouter.get("/purchase-orders", async (req: AuthedRequest, res) => {
+  const orders = await getPurchaseOrdersByStore(req.user!.storeId as string, 500);
   res.json(orders);
 });
 
-operationsRouter.get("/purchase-orders/:id", async (req, res) => {
+operationsRouter.get("/purchase-orders/:id", async (req: AuthedRequest, res) => {
   const order = await getPurchaseOrder(req.params.id);
   if (!order) return res.status(404).json({ error: "Bon introuvable." });
   res.json(order);
@@ -166,7 +166,8 @@ operationsRouter.get("/purchase-orders/:id", async (req, res) => {
 
 operationsRouter.post(
   "/purchase-orders",
-  async (req, res) => {
+  requirePermission("receiving"),
+  async (req: AuthedRequest, res) => {
     const po = req.body as {
       id?: string; supplierId?: string; supplierName?: string; date?: string;
       items: Array<{ materialId: string; materialName: string; quantity: number; unit: string; unitPrice: number }>;
@@ -188,7 +189,8 @@ operationsRouter.post(
 
 operationsRouter.put(
   "/purchase-orders/:id",
-  async (req, res) => {
+  requirePermission("manage"),
+  async (req: AuthedRequest, res) => {
     const po = req.body as {
       supplierName?: string; date?: string; items?: unknown[];
       status?: string; notes?: string;
@@ -201,7 +203,8 @@ operationsRouter.put(
 
 operationsRouter.delete(
   "/purchase-orders/:id",
-  async (req, res) => {
+  requirePermission("manage"),
+  async (req: AuthedRequest, res) => {
     await query(`DELETE FROM purchase_order_items WHERE order_id=$1`, [req.params.id]);
     const result = await query(`DELETE FROM purchase_orders WHERE id=$1 RETURNING id`, [req.params.id]);
     if (result.length === 0) return res.status(404).json({ error: "Bon introuvable." });
@@ -213,7 +216,7 @@ operationsRouter.delete(
 /**  LOSSES (perte) — transaction avec mise à jour du stock produit      */
 /** ------------------------------------------------------------------ */
 
-operationsRouter.get("/losses", async (_req, res) => {
+operationsRouter.get("/losses", async (req: AuthedRequest, res) => {
   res.json(
     await query(
       `SELECT id, date, product_id AS "productId", product_name AS "productName",
@@ -226,7 +229,8 @@ operationsRouter.get("/losses", async (_req, res) => {
 
 operationsRouter.post(
   "/losses",
-  async (req, res) => {
+  requirePermission("stock"),
+  async (req: AuthedRequest, res) => {
     const l = req.body as {
       id?: string; productId?: string; productName: string; quantity: number;
       unit?: string; lossValue?: number; reason: string; destination: string;
@@ -242,7 +246,7 @@ operationsRouter.post(
         reason: l.reason,
         destination: l.destination,
         recordedBy: l.recordedBy ?? "système",
-        storeId: l.storeId ?? "store-1",
+        storeId: resolveStoreId(req.user!, l.storeId),
         notes: l.notes,
       });
       res.status(201).json({ created: true });
@@ -255,7 +259,8 @@ operationsRouter.post(
 
 operationsRouter.put(
   "/losses/:id",
-  async (req, res) => {
+  requirePermission("manage"),
+  async (req: AuthedRequest, res) => {
     const l = req.body as {
       quantity?: number; unit?: string; lossValue?: number;
       reason?: string; destination?: string; notes?: string;
@@ -283,7 +288,7 @@ operationsRouter.put(
 /**  CASH & CUSTOM                                                    */
 /** ------------------------------------------------------------------ */
 
-operationsRouter.get("/cash-transactions", async (_req, res) => {
+operationsRouter.get("/cash-transactions", async (req: AuthedRequest, res) => {
   res.json(
     await query(
       `SELECT id, type, amount, description, date,
@@ -295,7 +300,8 @@ operationsRouter.get("/cash-transactions", async (_req, res) => {
 
 operationsRouter.post(
   "/cash-transactions",
-  async (req, res) => {
+  requirePermission("cash"),
+  async (req: AuthedRequest, res) => {
     const t = req.body as {
       id?: string; type: string; amount: number; description?: string;
       recordedBy?: string; storeId?: string;
@@ -304,7 +310,7 @@ operationsRouter.post(
       `INSERT INTO cash_transactions (id, type, amount, description, date, recorded_by, store_id)
        VALUES ($1,$2,$3,$4,now(),$5,$6)
        RETURNING id, type, amount, description, date, recorded_by AS "recordedBy", store_id AS "storeId"`,
-      [t.id ?? null, t.type, t.amount, t.description ?? null, t.recordedBy ?? null, t.storeId ?? "store-1"],
+      [t.id ?? null, t.type, t.amount, t.description ?? null, t.recordedBy ?? null, resolveStoreId(req.user!, t.storeId)],
     );
     if (!row) return res.status(500).json({ error: "Erreur interne." });
     res.status(201).json(row);
@@ -313,7 +319,8 @@ operationsRouter.post(
 
 operationsRouter.put(
   "/cash-transactions/:id",
-  async (req, res) => {
+  requirePermission("manage"),
+  async (req: AuthedRequest, res) => {
     const t = req.body as { type?: string; amount?: number; description?: string };
     const result = await query(
       `UPDATE cash_transactions SET
@@ -331,14 +338,15 @@ operationsRouter.put(
 
 operationsRouter.delete(
   "/cash-transactions/:id",
-  async (req, res) => {
+  requirePermission("manage"),
+  async (req: AuthedRequest, res) => {
     const result = await query(`DELETE FROM cash_transactions WHERE id=$1 RETURNING id`, [req.params.id]);
     if (result.length === 0) return res.status(404).json({ error: "Transaction introuvable." });
     res.json({ deleted: true });
   },
 );
 
-operationsRouter.get("/custom-orders", async (_req, res) => {
+operationsRouter.get("/custom-orders", async (req: AuthedRequest, res) => {
   res.json(
     await query(
       `SELECT id, order_number AS "orderNumber", client_name AS "clientName", phone,
@@ -354,7 +362,8 @@ operationsRouter.get("/custom-orders", async (_req, res) => {
 
 operationsRouter.post(
   "/custom-orders",
-  async (req, res) => {
+  requirePermission("pos"),
+  async (req: AuthedRequest, res) => {
     const o = req.body as {
       id?: string; orderNumber?: string; clientName: string; phone?: string;
       cakeType?: string; servingCount?: number; flavor?: string;
@@ -379,7 +388,7 @@ operationsRouter.post(
         o.phone ?? null, o.cakeType ?? null, o.servingCount ?? 0, o.flavor ?? null,
         o.customInscription ?? null, o.themeColor ?? null, o.pickupDate ?? null,
         o.pickupTime ?? null, o.totalPrice ?? 0, o.depositPaid ?? 0,
-        o.status ?? "commande", o.storeId ?? "store-1", o.notes ?? null,
+        o.status ?? "commande", resolveStoreId(req.user!, o.storeId), o.notes ?? null,
       ],
     );
     if (!row) return res.status(500).json({ error: "Erreur interne." });
@@ -389,7 +398,8 @@ operationsRouter.post(
 
 operationsRouter.patch(
   "/custom-orders/:id/status",
-  async (req, res) => {
+  requirePermission("pos"),
+  async (req: AuthedRequest, res) => {
     const result = await query(
       `UPDATE custom_orders SET status = $2 WHERE id = $1 RETURNING id, order_number AS "orderNumber",
                 client_name AS "clientName", status, store_id AS "storeId"`,
@@ -402,7 +412,8 @@ operationsRouter.patch(
 
 operationsRouter.put(
   "/custom-orders/:id",
-  async (req, res) => {
+  requirePermission("manage"),
+  async (req: AuthedRequest, res) => {
     const o = req.body as {
       clientName?: string; phone?: string; cakeType?: string; servingCount?: number;
       flavor?: string; customInscription?: string; themeColor?: string;
@@ -444,7 +455,8 @@ operationsRouter.put(
 
 operationsRouter.delete(
   "/custom-orders/:id",
-  async (req, res) => {
+  requirePermission("manage"),
+  async (req: AuthedRequest, res) => {
     const result = await query(`DELETE FROM custom_orders WHERE id=$1 RETURNING id`, [req.params.id]);
     if (result.length === 0) return res.status(404).json({ error: "Commande introuvable." });
     res.json({ deleted: true });
@@ -453,7 +465,8 @@ operationsRouter.delete(
 
 operationsRouter.delete(
   "/losses/:id",
-  async (req, res) => {
+  requirePermission("manage"),
+  async (req: AuthedRequest, res) => {
     const result = await query(`DELETE FROM losses WHERE id=$1 RETURNING id`, [req.params.id]);
     if (result.length === 0) return res.status(404).json({ error: "Péda introuvable." });
     res.json({ deleted: true });
@@ -463,7 +476,8 @@ operationsRouter.delete(
 
 operationsRouter.patch(
   "/purchase-orders/:id/status",
-  async (req, res) => {
+  requirePermission("receiving"),
+  async (req: AuthedRequest, res) => {
     const { status } = req.body as { status: string };
     const order = await updatePurchaseOrderStatus(req.params.id, status);
     if (!order) return res.status(404).json({ error: "Bon introuvable." });
@@ -473,7 +487,8 @@ operationsRouter.patch(
 
 operationsRouter.patch(
   "/production-orders/:id/status",
-  async (req, res) => {
+  requirePermission("production"),
+  async (req: AuthedRequest, res) => {
     const { status } = req.body as { status: string };
     const order = await updateProductionOrder(req.params.id, { status });
     if (!order) return res.status(404).json({ error: "Ordre introuvable." });
@@ -483,7 +498,8 @@ operationsRouter.patch(
 
 operationsRouter.put(
   "/sales/:id",
-  async (req, res) => {
+  requirePermission("manage"),
+  async (req: AuthedRequest, res) => {
     const s = req.body as {
       discountAmount?: number; vatAmount?: number; total?: number;
       paymentMethod?: string; amountPaid?: number;
@@ -513,7 +529,8 @@ operationsRouter.put(
 
 operationsRouter.delete(
   "/sales/:id",
-  async (req, res) => {
+  requirePermission("manage"),
+  async (req: AuthedRequest, res) => {
     await query(`DELETE FROM sale_items WHERE sale_id=$1`, [req.params.id]);
     const result = await query(`DELETE FROM sales WHERE id=$1 RETURNING id`, [req.params.id]);
     if (result.length === 0) return res.status(404).json({ error: "Vente introuvable." });

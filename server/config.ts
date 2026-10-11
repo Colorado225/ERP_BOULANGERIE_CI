@@ -3,8 +3,8 @@
  * et constantes de sécurité.
  *
  * Règles :
- * - En production (`NODE_ENV=production`), les secrets et la base de données
- *   sont OBLIGATOIRES : absence, valeur trop courte ou valeur de développement
+ * - En production (`NODE_ENV=production`), les variables sensibles sont
+ *   OBLIGATOIRES : absence, valeur trop courte ou valeur de développement
  *   => le serveur refuse de démarrer.
  * - En développement, des valeurs de repli sont utilisées, avec un avertissement.
  */
@@ -67,16 +67,33 @@ const readSecret = (name: string, devFallback: string): string => {
   return value;
 };
 
+/**
+ * URL de base de Neon Auth (fournie par le tableau de bord Neon, sans slash final).
+ * Exemple : https://ep-xxx.neonauth.<région>.aws.neon.tech/neondb/auth
+ * Le JWKS est exposé sous `${base}/.well-known/jwks.json`.
+ */
+const neonAuthBaseUrl = (
+  readRequired(
+    "NEON_AUTH_BASE_URL",
+    "https://ep-patient-salad-b4ndwcsm.neonauth.c-6.us-east-2.aws.neon.tech/neondb/auth",
+  )
+).replace(/\/+$/, "");
+
 export const config = {
   /** URL de connexion Neon (Postgres serverless). Obligatoire en production. */
   databaseUrl: readRequired(
     "DATABASE_URL",
     "postgres://localhost:5432/mock",
   ),
-  /** Secret de signature des JWT. Obligatoire et long en production. */
-  jwtSecret: readSecret("JWT_SECRET", "dev-secret-change-me"),
-  /** Durée de validité d'un jeton de session. */
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN || "12h",
+  /** URL de base Neon Auth (validation des jetons via JWKS). */
+  neonAuthBaseUrl,
+  /**
+   * Émetteur attendu (`iss`) des jetons Neon Auth.
+   * Par défaut : l'origine de l'URL de base (schéma + hôte), conformément à la
+   * documentation Neon. À confirmer en décodant un jeton réel.
+   */
+  neonAuthIssuer:
+    process.env.NEON_AUTH_ISSUER || new URL(neonAuthBaseUrl).origin,
   /** Port d'écoute du serveur API. */
   port: Number(process.env.PORT || 4000),
   /** Origines autorisées pour le front (CORS). */

@@ -6,24 +6,15 @@
  * - normalise les erreurs (message exploitable par l'interface) ;
  * - centralise les types d'entrées/sorties.
  *
- * MIGRATION VERS NEON AUTH : l'authentification est désormais gérée par Neon
- * qui fournit les tokens et le JWKS pour la validation côté serveur.
+ * Authentification : Neon Auth (SDK) gère la session et le jeton (15 min).
+ * Le jeton est lu à chaque requête ; il n'est jamais stocké par l'application.
  */
+
+import { createAuthClient } from "@neondatabase/neon-js/auth";
+import { BetterAuthVanillaAdapter } from "@neondatabase/neon-js/auth/vanilla/adapters";
 
 /** Base URL de l'API. Vide en dev → on s'appuie sur le proxy Vite `/api`. */
 const API_BASE = import.meta.env.VITE_API_URL ?? "";
-
-/** URL d'authentification locale (POST /api/auth/login). */
-const NEON_AUTH_URL = "/api/auth/login";
-
-const TOKEN_KEY = "boulangerie_pro_token";
-
-/** Jeton de session courant. */
-export const getToken = (): string | null => localStorage.getItem(TOKEN_KEY);
-export const setToken = (token: string | null): void => {
-  if (token) localStorage.setItem(TOKEN_KEY, token);
-  else localStorage.removeItem(TOKEN_KEY);
-};
 
 /** Erreur API normalisée, porteuse d'un message lisible. */
 export class ApiError extends Error {
@@ -37,6 +28,35 @@ export class ApiError extends Error {
 
 import { enqueueOperation, type PendingOperation } from "./syncQueue";
 
+/** URL de base Neon Auth côté front (variable VITE_NEON_AUTH_URL). */
+const NEON_AUTH_URL = import.meta.env.VITE_NEON_AUTH_URL ?? "";
+
+const createNeonAuth = (url: string) =>
+  createAuthClient(url, { adapter: BetterAuthVanillaAdapter() });
+type NeonAuthClient = ReturnType<typeof createNeonAuth>;
+
+let authClient: NeonAuthClient | null = null;
+
+/** Client Neon Auth, créé à la demande : une configuration absente produit une erreur claire. */
+const getAuthClient = (): NeonAuthClient => {
+  if (!NEON_AUTH_URL) {
+    throw new ApiError("VITE_NEON_AUTH_URL n'est pas configurée.", 0);
+  }
+  authClient ??= createNeonAuth(NEON_AUTH_URL);
+  return authClient;
+};
+
+/** Jeton Neon courant (renouvelé si nécessaire). Null si aucune session. */
+export const getAccessToken = async (): Promise<string | null> => {
+  try {
+    const { data, error } = await getAuthClient().token();
+    if (error || !data) return null;
+    return data.token;
+  } catch {
+    return null;
+  }
+};
+
 /**
  * Effectue une requête vers l'API et renvoie le corps JSON typé.
  * Ajoute automatiquement le jeton de session s'il existe.
@@ -46,7 +66,7 @@ export const apiFetch = async <T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> => {
-  const token = getToken();
+  const token = await getAccessToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string> | undefined),
@@ -71,7 +91,10 @@ export const apiFetch = async <T>(
       else if (path.includes("/materials") || path.includes("/inventory"))
         opType = "adjustment";
 
-      enqueueOperation(path, { ...options, headers }, opType);
+      // Le jeton n'est pas mémorisé : il est réinjecté à chaque rejeu.
+      const queuedHeaders: Record<string, string> = { ...headers };
+      delete queuedHeaders.Authorization;
+      enqueueOperation(path, { ...options, headers: queuedHeaders }, opType);
       throw new ApiError(
         "Hors-ligne : l'opération sera synchronisée automatiquement lorsque le réseau sera rétabli.",
         0,
@@ -124,44 +147,45 @@ export interface SessionUser {
   permissions: string[];
 }
 
-export interface LoginResponse {
-  token: string;
-  user: SessionUser;
-}
-
-/** Authentifie un utilisateur auprès de Neon Auth et mémorise le jeton. */
+/** Authentifie via Neon Auth, puis charge le profil depuis l'API. */
 export const login = async (
   email: string,
   password: string,
 ): Promise<SessionUser> => {
-  // Requête vers Neon Auth pour obtenir un token JWT
-  const response = await fetch(NEON_AUTH_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ email, password }),
-  });
-
-  if (!response.ok) {
-    let message = `Erreur ${response.status}`;
-    try {
-      const body = (await response.json()) as { error?: string };
-      if (body?.error) message = body.error;
-    } catch {
-      /* corps non JSON : on garde le message générique */
-    }
-    throw new ApiError(message, response.status);
+  const { error } = await getAuthClient().signIn.email({ email, password });
+  if (error) {
+    throw new ApiError(error.message ?? "Identifiants invalides.", 401);
   }
-
-  const data = (await response.json()) as LoginResponse;
-  setToken(data.token);
-  return data.user;
+  return me();
 };
 
-/** Termine la session locale (invalidation du token côté Neon peut être ajoutée si nécessaire). */
-export const logout = (): void => setToken(null);
+/**
+ * Restaure la session Neon existante. Renvoie null si aucune session.
+ * Une session valide sans compte rattaché (403) remonte l'erreur à l'interface.
+ */
+export const restoreSession = async (): Promise<SessionUser | null> => {
+  const { data } = await getAuthClient().getSession();
+  if (!data?.session) return null;
+  try {
+    return await me();
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) {
+      await logout();
+      return null;
+    }
+    throw err;
+  }
+};
 
-/** Récupère le profil de l'utilisateur courant via l'API locale qui valide le token avec Neon JWKS. */
+/** Termine la session Neon. */
+export const logout = async (): Promise<void> => {
+  try {
+    await getAuthClient().signOut();
+  } catch {
+    /* session déjà fermée ou réseau indisponible */
+  }
+};
+
+/** Profil de l'utilisateur courant. Le rôle est lu côté serveur, en base. */
 export const me = (): Promise<SessionUser> =>
   api.get<SessionUser>("/api/auth/me");
