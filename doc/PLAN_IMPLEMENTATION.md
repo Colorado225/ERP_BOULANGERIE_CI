@@ -2,6 +2,57 @@
 
 > **Statut** : proposition, à valider avant exécution
 > **Date** : 11/10/2026
+
+---
+
+## Suivi d'avancement (état au 11/10/2026)
+
+**Décisions appliquées** :
+
+| Décision | Choix retenu | Application |
+| -------- | ------------ | ----------- |
+| D1 | **A — Neon Auth seul** | Lot 1 : jetons EdDSA vérifiés via JWKS ; rôle et boutique lus en base (`users.auth_user_id = sub`). Login local et `signToken` supprimés. |
+| D2 | **zod** | Lot 2 : ventes (`server/validation/sales.ts`). Autres écritures : à faire (2.5). |
+| D3 | IndexedDB seule (recommandation) | **Non appliquée** : lot 3. `syncQueue.ts` et `offlineQueue.ts` coexistent encore. |
+| D4 | Séquence continue par boutique, format `CI-<boutique>-<NNNNNN>` | **Mécanisme appliqué** (`receipt_sequences`, verrou SQL). **Format à confirmer** (`formatReceiptNumber`). |
+| D5 | **B — Mode démo supprimé complètement** (option choisie, différente de la recommandation) | Lot 1 : aucun compte démo, aucun bypass, même en développement. |
+
+**Lots** :
+
+| Lot | État | Commits / notes |
+| --- | ---- | --------------- |
+| 0 | Fait | `d3fc936` |
+| 1 | Fait, sauf test en conditions réelles avec Neon | `c8782ef`. Liaison manuelle de secours : `POST /api/users/:id/link` (gérant). |
+| 2 | En cours | Voir ci-dessous. |
+| 3 à 5 | Non commencés | — |
+
+**Lot 1 — point 1.10 (limitation des tentatives de connexion)** : **proposé comme obsolète**. Le login est désormais délégué à Neon Auth, qui gère ses propres tentatives. Le serveur ne traite plus de mot de passe. À confirmer.
+
+**Lot 2 — état** :
+
+| # | État | Détail |
+| - | ---- | ------ |
+| 2.1 | Fait | Serveur : prix, TVA, remise et total lus ou calculés en base. Le front n'envoie que panier, mode de paiement, montant reçu, remise. |
+| 2.2 | Fait | Calcul partagé avec le front (`src/utils/fiscalite.ts`, importé par le serveur, sans copie). Cas de référence testé : 183 / 1 317 / 1 500. |
+| 2.3 | Fait | `id` client, `ON CONFLICT DO NOTHING`, rejeu renvoie la vente existante (200). Testé en envois simultanés. |
+| 2.4 | Mécanisme fait | 100 ventes simultanées → numéros 1 à 100 sans trou (testé). Format à confirmer (D4). |
+| 2.5 | Partiel | Ventes seulement. Production, achats, pertes, caisse, produits, utilisateurs : à faire. |
+| 2.6 | Fait (`NOT VALID`) | `sales.total >= 0`, `sale_items.quantity > 0`, `raw_materials.current_stock >= 0`. Pour valider sur données historiques : `VALIDATE CONSTRAINT`. `products.stock` non contraint (décision à prendre, voir ci-dessous). |
+| 2.7 | À vérifier | `receivePurchaseOrder` et `updateProductionStatus` utilisent déjà `transaction()`. Test avec erreur injectée à ajouter. |
+| 2.8 | Non fait | `stock_movements` ne gère que les matières premières. Les mouvements de produits finis (ventes) n'ont pas de table. |
+| 2.9 | Fait | Le caissier et la boutique viennent du jeton. Les valeurs du corps sont ignorées. |
+
+**Constats du lot 2 (à connaître)** :
+- Avant ce lot, le POS **n'enregistrait aucune vente côté serveur** (`completeSale` était purement local). Le service `createSale` n'était appelé par aucune route utilisée, et il insérait des UUID dans une colonne `BIGSERIAL` (il ne pouvait pas fonctionner). Le schéma n'avait pas non plus la colonne `sales.notes`, utilisée par l'API.
+- Vente Mobile Money : la vente n'est enregistrée qu'après confirmation du paiement. Un paiement reçu mais non enregistré reste signalé dans la modale, et l'enregistrement se relance sans nouveau paiement.
+- Hors-ligne : la vente est mise en file avec son `id` et affichée avec le numéro provisoire « EN ATTENTE DE SYNCHRO ». Le numéro définitif vient du serveur à la synchronisation.
+
+**Décisions ouvertes (à trancher)** :
+- **Stock produit à 0** : `UPDATE … GREATEST(0, stock - qty)` masque une survente. Garder (comportement actuel), ou refuser la vente ?
+- **`PUT /api/operations/sales/:id` et `DELETE`** : le gérant peut modifier ou supprimer un ticket enregistré. Pour une facture, il faudrait plutôt un avoir. Supprimer ces routes ?
+- **Format du numéro de ticket** (D4) : `CI-<boutique>-<NNNNNN>` provisoire.
+- **Fidélité et solde client** : calculés encore côté front uniquement (non persistés).
+- **Caisse (espèces)** : la transaction de caisse reste locale.
 > **Base de référence** : commit `bdd3425` (branche `arena/6f9daeaa-erp-boulangerie-ci`)
 > **Sources** : audit du code (`server/`, `src/`), `ActionDB.md` (C1–C7, A1–A9), `PLAN_ACTION.md`, `doc/C1-auth-restauration-session.md`
 >

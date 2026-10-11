@@ -5,6 +5,7 @@
 import { randomUUID } from "node:crypto";
 import { Router } from "express";
 import { query, queryOne } from "../db";
+import { linkUserToAuthAccount } from "../services/userLinkService";
 import {
   requireAuth,
   requireRole,
@@ -89,6 +90,25 @@ adminRouter.post("/users", requireRole("gerant"), async (req, res) => {
     ],
   );
   res.status(201).json({ created: true });
+});
+
+/**
+ * Liaison manuelle d'une fiche à un compte Neon Auth (gérant uniquement).
+ * Sert de secours lorsque la liaison automatique ne peut pas se faire (par
+ * exemple jeton sans `email_verified`). Logique dans userLinkService.
+ */
+adminRouter.post("/users/:id/link", requireRole("gerant"), async (req, res) => {
+  const authUserId = (req.body as { authUserId?: unknown })?.authUserId;
+  const result = await linkUserToAuthAccount(
+    { query, queryOne },
+    req.params.id,
+    authUserId,
+  );
+  if (!result.ok) {
+    res.status(result.status).json({ error: result.error });
+    return;
+  }
+  res.json({ linked: true });
 });
 
 /** Active/désactive un compte (gérant uniquement). */

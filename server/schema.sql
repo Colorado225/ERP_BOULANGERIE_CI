@@ -287,3 +287,33 @@ CREATE INDEX IF NOT EXISTS idx_cash_store_date     ON cash_transactions (store_i
 CREATE INDEX IF NOT EXISTS idx_losses_store_date   ON losses (store_id, date DESC);
 CREATE INDEX IF NOT EXISTS idx_recipes_product     ON recipes (product_id);
 CREATE INDEX IF NOT EXISTS idx_users_email         ON users (email);
+
+-- ---- Lot 2 : intégrité des ventes, numérotation et stock --------------------
+
+-- La table `sales` n'avait pas de colonne `notes`, utilisée par l'API
+-- (INSERT, SELECT) : ajoutée ici de façon idempotente.
+ALTER TABLE sales ADD COLUMN IF NOT EXISTS notes TEXT;
+
+-- Numérotation continue des tickets, par boutique (décision D4, format dans
+-- saleCalculation.formatReceiptNumber). Verrouillée par l'UPDATE dans la
+-- transaction de vente : un ROLLBACK ne laisse aucun trou.
+CREATE TABLE IF NOT EXISTS receipt_sequences (
+  store_id     TEXT PRIMARY KEY REFERENCES stores(id),
+  last_number  BIGINT NOT NULL DEFAULT 0
+);
+
+-- Contraintes CHECK (lot 2.6). NOT VALID : appliquées aux nouvelles écritures
+-- sans bloquer la migration si des lignes historiques sont incohérentes.
+-- Pour les valider après nettoyage : ALTER TABLE ... VALIDATE CONSTRAINT.
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'sales_total_nonneg') THEN
+    ALTER TABLE sales ADD CONSTRAINT sales_total_nonneg CHECK (total >= 0) NOT VALID;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'sale_items_quantity_positive') THEN
+    ALTER TABLE sale_items ADD CONSTRAINT sale_items_quantity_positive CHECK (quantity > 0) NOT VALID;
+  END IF;
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'raw_materials_stock_nonneg') THEN
+    ALTER TABLE raw_materials ADD CONSTRAINT raw_materials_stock_nonneg CHECK (current_stock >= 0) NOT VALID;
+  END IF;
+END $$;

@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { useBakery } from '../../context/BakeryContext';
+import { useBakery, type SaleDraftInput } from '../../context/BakeryContext';
+import { newSaleId } from '../../utils/saleId';
 import { Product, CartItem, PaymentMethod } from '../../types/bakery';
 import {
   Search,
@@ -47,6 +48,7 @@ export const PosView: React.FC = () => {
     customers,
     formatMoney,
     completeSale,
+    previewSale,
     lastCompletedSale,
     setLastCompletedSale,
   } = useBakery();
@@ -67,6 +69,13 @@ export const PosView: React.FC = () => {
   const [customerPhone, setCustomerPhone] = useState<string>('');
   const [isProcessingPayment, setIsProcessingPayment] = useState<boolean>(false);
   const [mobileMoneyError, setMobileMoneyError] = useState<string | null>(null);
+  const [saleError, setSaleError] = useState<string | null>(null);
+  // Vente en cours d'enregistrement : rejouée avec le même identifiant tant
+  // que le panier ne change pas (idempotence côté serveur).
+  const pendingSaleRef = useRef<{ id: string; fingerprint: string } | null>(null);
+  // Paiement Mobile Money reçu mais vente non encore enregistrée : on ne
+  // relance jamais le paiement, seulement l'enregistrement.
+  const paidPendingRef = useRef<{ saleId: string; saleData: SaleDraftInput } | null>(null);
 
   // Nettoyer le scanner quand le composant se démonte
   useEffect(() => {
@@ -202,75 +211,129 @@ export const PosView: React.FC = () => {
     }
   };
 
+  const saleFingerprint = (d: SaleDraftInput): string =>
+    JSON.stringify({
+      cart: d.cart.map((i) => [i.product.id, i.quantity]),
+      pm: d.paymentMethod,
+      paid: d.amountPaid,
+      customer: d.customerId ?? null,
+      discount: d.discountPercent ?? 0,
+    });
+
+  /** Identifiant stable pour une même vente (rejeu sûr), nouveau si le panier change. */
+  const saleIdFor = (d: SaleDraftInput): string => {
+    const fingerprint = saleFingerprint(d);
+    if (pendingSaleRef.current?.fingerprint !== fingerprint) {
+      pendingSaleRef.current = { id: newSaleId(), fingerprint };
+    }
+    return pendingSaleRef.current.id;
+  };
+
+  const recordSale = async (saleData: SaleDraftInput, saleId: string) => {
+    try {
+      const sale = await completeSale({ ...saleData, saleId });
+      pendingSaleRef.current = null;
+      return sale;
+    } catch (error) {
+      setSaleError(error instanceof Error ? error.message : "Échec de l'enregistrement de la vente.");
+      return null;
+    }
+  };
+
+  const PAID_BUT_NOT_RECORDED =
+    "Paiement reçu mais vente non enregistrée. Relancez l'enregistrement : ne pas encaisser une seconde fois.";
+
   const handleFinalizeSale = async () => {
     if (cart.length === 0) return;
+    setSaleError(null);
 
-    // 1. Récupérer l'instance du gestionnaire Mobile Money
-    const mobileMoneyManager = MobileMoneyManager.getInstance();
-    const mobileOperator = getMobileMoneyOperator(selectedPaymentMethod);
-
-    // 2. Si c'est un paiement Mobile Money, lancer d'abord le paiement
-    if (mobileOperator) {
-      setIsProcessingPayment(true);
-      setMobileMoneyError(null);
-    }
-
-    // 3. Valider la vente dans le contexte
-    const completedSale = completeSale({
+    const saleData: SaleDraftInput = {
       cart,
       paymentMethod: selectedPaymentMethod,
       amountPaid: selectedPaymentMethod === 'especes' ? cashGiven : total,
       customerId: selectedCustomerId || undefined,
       discountPercent,
-    });
+    };
 
-    // 4. Traitement du paiement Mobile Money si nécessaire
+    // A. Paiement Mobile Money déjà reçu : seul l'enregistrement est relancé.
+    if (paidPendingRef.current) {
+      const { saleId, saleData: paidData } = paidPendingRef.current;
+      const sale = await recordSale(paidData, saleId);
+      if (sale) {
+        paidPendingRef.current = null;
+        setMobileMoneyError(null);
+        setCustomerPhone('');
+        setIsPaymentModalOpen(false);
+        clearCart();
+      } else {
+        setMobileMoneyError(PAID_BUT_NOT_RECORDED);
+      }
+      return;
+    }
+
+    // B. Mobile Money : la vente n'est enregistrée qu'une fois le paiement confirmé.
+    const mobileOperator = getMobileMoneyOperator(selectedPaymentMethod);
     if (mobileOperator) {
-      try {
-        // Valider et normaliser le numéro de téléphone avant envoi à l'API
-        let normalizedPhone: string;
-        try {
-          normalizedPhone = mobileMoneyManager.normalizePhoneNumber(customerPhone);
-        } catch (phoneError) {
-          setIsProcessingPayment(false);
-          setMobileMoneyError("Numéro de téléphone invalide (format ivoirien requis : 0708091011)");
-          return;
-        }
+      const mobileMoneyManager = MobileMoneyManager.getInstance();
+      const saleId = saleIdFor(saleData);
+      setIsProcessingPayment(true);
+      setMobileMoneyError(null);
 
+      let normalizedPhone: string;
+      try {
+        normalizedPhone = mobileMoneyManager.normalizePhoneNumber(customerPhone);
+      } catch {
+        setIsProcessingPayment(false);
+        setMobileMoneyError("Numéro de téléphone invalide (format ivoirien requis : 0708091011)");
+        return;
+      }
+
+      try {
         const transaction = await mobileMoneyManager.initiatePayment(
-          completedSale,
+          previewSale(saleData, saleId),
           mobileOperator,
           normalizedPhone
         );
         console.log('Paiement Mobile Money initié, en attente de confirmation webhook:', transaction);
 
-        // Observer les changements de statut de la transaction (mis à jour en temps réel via SSE/webhooks)
+        // Observer les changements de statut (mis à jour en temps réel via SSE/webhooks)
         const statusChecker = setInterval(() => {
           const updatedTx = mobileMoneyManager.getTransaction(transaction.id);
-          if (updatedTx) {
-            console.log('Statut transaction:', updatedTx.status);
+          if (!updatedTx) return;
+          console.log('Statut transaction:', updatedTx.status);
 
-            if (updatedTx.status === MobileMoneyTransactionStatus.SUCCESS) {
-              clearInterval(statusChecker);
+          if (updatedTx.status === MobileMoneyTransactionStatus.SUCCESS) {
+            clearInterval(statusChecker);
+            paidPendingRef.current = { saleId, saleData };
+            void (async () => {
+              const sale = await recordSale(saleData, saleId);
               setIsProcessingPayment(false);
-              // Réinitialiser le numéro de téléphone pour la prochaine vente
-              setCustomerPhone('');
-              setIsPaymentModalOpen(false);
-              clearCart();
-            } else if (updatedTx.status === MobileMoneyTransactionStatus.FAILED) {
-              clearInterval(statusChecker);
-              setIsProcessingPayment(false);
-              setMobileMoneyError(updatedTx.failureReason || 'Paiement échoué : veuillez réessayer');
-            }
+              if (sale) {
+                paidPendingRef.current = null;
+                setCustomerPhone('');
+                setIsPaymentModalOpen(false);
+                clearCart();
+              } else {
+                setMobileMoneyError(PAID_BUT_NOT_RECORDED);
+              }
+            })();
+          } else if (updatedTx.status === MobileMoneyTransactionStatus.FAILED) {
+            clearInterval(statusChecker);
+            setIsProcessingPayment(false);
+            setMobileMoneyError(updatedTx.failureReason || 'Paiement échoué : veuillez réessayer');
           }
         }, 1000); // Vérification locale légère (1s) uniquement pour l'UI, pas de polling API
-
       } catch (error) {
         setIsProcessingPayment(false);
         setMobileMoneyError(error instanceof Error ? error.message : "Erreur lors du paiement");
-        return;
       }
+      return;
     }
+
+    // C. Espèces, carte, crédit B2B : enregistrement serveur puis ticket.
+    const saleId = saleIdFor(saleData);
+    const completedSale = await recordSale(saleData, saleId);
+    if (!completedSale) return;
 
     // 2. Préparer les données pour le ticket ESC/POS
     const storeInfo: StoreInfo = {
@@ -522,6 +585,11 @@ export const PosView: React.FC = () => {
               {mobileMoneyError && (
                 <div className="bg-rose-950/50 border border-rose-800/60 rounded-xl p-4 text-center">
                   <p className="text-sm text-rose-400">{mobileMoneyError}</p>
+                </div>
+              )}
+              {saleError && (
+                <div className="bg-rose-950/50 border border-rose-800/60 rounded-xl p-4 text-center">
+                  <p className="text-sm text-rose-400">{saleError}</p>
                 </div>
               )}
               <div className="bg-blue-950/30 border border-blue-800/40 rounded-xl p-4">

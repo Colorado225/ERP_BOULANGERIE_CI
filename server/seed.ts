@@ -82,7 +82,7 @@ const seed = async () => {
 
   // Ordre respectant les dépendances de clés étrangères.
   await query(`TRUNCATE TABLE
-    sale_items, sales, purchase_order_items, purchase_orders,
+    sale_items, sales, receipt_sequences, purchase_order_items, purchase_orders,
     recipe_ingredients, recipes, production_orders, stock_movements,
     losses, cash_transactions, custom_orders, products, raw_materials,
     customers, suppliers, users, stores, company_settings

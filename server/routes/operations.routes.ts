@@ -11,6 +11,8 @@
 import { Router } from "express";
 import { query, queryOne } from "../db";
 import { createSale } from "../services/salesService";
+import { SaleRuleError } from "../services/saleCalculation";
+import { saleRequestSchema } from "../validation/sales";
 import { getSale, getSalesForStore } from "../services/salesQueries";
 import { createProductionOrder, updateProductionOrder } from "../services/productionService";
 import { getProductionOrder, getProductionOrdersByStore } from "../services/productionQueries";
@@ -42,44 +44,46 @@ operationsRouter.post(
   "/sales",
   requirePermission("pos"),
   async (req: AuthedRequest, res) => {
-    const s = req.body as {
-      id?: string; items: Array<{ productId: string; quantity: number; unitPrice?: number; name?: string }>;
-      subtotal?: number; discountAmount?: number; vatAmount?: number;
-      total?: number; paymentMethod: string; amountPaid?: number;
-      changeReturned?: number; customerId?: string; customerName?: string;
-      cashierName?: string; storeId?: string; notes?: string;
-    };
+    const parsed = saleRequestSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({
+        error: "Requête de vente invalide.",
+        details: parsed.error.issues.map((i) => ({
+          path: i.path.join("."),
+          message: i.message,
+        })),
+      });
+      return;
+    }
+    const body = parsed.data;
     const user = req.user!;
-    const cashierName = user.name;
-    const storeId = resolveStoreId(user, s.storeId);
+    // Caissier et boutique viennent du jeton (et des droits), jamais du corps.
+    const storeId = resolveStoreId(user, body.storeId);
 
     try {
-      const sale = await createSale({
-        items: s.items,
-        subtotal: s.subtotal ?? 0,
-        discountAmount: s.discountAmount ?? 0,
-        vatAmount: s.vatAmount ?? 0,
-        total: s.total ?? 0,
-        paymentMethod: s.paymentMethod,
-        amountPaid: s.amountPaid ?? 0,
-        changeReturned: s.changeReturned ?? 0,
-        customerId: s.customerId ?? undefined,
-        customerName: s.customerName ?? undefined,
-        cashierName,
-        storeId,
-        notes: s.notes ?? undefined,
-      });
-      res.status(201).json(sale);
+      const { sale, created } = await createSale(
+        {
+          id: body.id,
+          items: body.items,
+          paymentMethod: body.paymentMethod,
+          amountPaid: body.amountPaid,
+          discountPercent: body.discountPercent,
+          customerId: body.customerId,
+          notes: body.notes,
+        },
+        { storeId, cashierName: user.name },
+      );
+      res.status(created ? 201 : 200).json(sale);
     } catch (err) {
+      if (err instanceof SaleRuleError) {
+        res.status(err.status).json({ error: err.message });
+        return;
+      }
       console.error("[api] échec vente :", err);
       res.status(500).json({ error: "Échec de l'enregistrement de la vente." });
     }
   },
 );
-
-/** ------------------------------------------------------------------ */
-/**  PRODUCTION                                                         */
-/** ------------------------------------------------------------------ */
 
 operationsRouter.get("/production-orders", async (req: AuthedRequest, res) => {
   const orders = await getProductionOrdersByStore(req.user!.storeId as string, 500);

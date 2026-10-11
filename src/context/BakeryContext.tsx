@@ -37,19 +37,16 @@ import { resolveWriteStoreId } from '../utils/store';
 import { computeVatBreakdown } from '../utils/fiscalite';
 import { api, ApiError } from '../services/api';
 
-/**
- * Génère un numéro de facture séquentiel, continu et non réutilisable,
- * conforme à l'exigence de traçabilité fiscale (DGI).
- *
- * Format : `CI-AAAAMMJJ-NNNN` où NNNN est un compteur croissant.
- */
-const buildReceiptNumber = (sequence: number): string => {
-  const now = new Date();
-  const y = now.getFullYear();
-  const m = String(now.getMonth() + 1).padStart(2, '0');
-  const d = String(now.getDate()).padStart(2, '0');
-  return `CI-${y}${m}${d}-${String(sequence).padStart(4, '0')}`;
-};
+/** Entrée d'une vente côté caisse : seules les intentions, jamais les montants. */
+export interface SaleDraftInput {
+  cart: CartItem[];
+  paymentMethod: PaymentMethod;
+  /** Montant reçu (espèces). Ignoré par le serveur pour les autres modes. */
+  amountPaid: number;
+  customerId?: string;
+  discountPercent?: number;
+  notes?: string;
+}
 
 interface BakeryContextType {
   // Navigation & Globals
@@ -111,14 +108,10 @@ interface BakeryContextType {
   updateProductionStatus: (orderId: string, newStatus: ProductionStatus) => void;
 
   // POS & Sales Operations
-  completeSale: (saleData: {
-    cart: CartItem[];
-    paymentMethod: PaymentMethod;
-    amountPaid: number;
-    customerId?: string;
-    discountPercent?: number;
-    notes?: string;
-  }) => Sale;
+  /** Enregistre la vente côté serveur (idempotente sur saleId). */
+  completeSale: (saleData: SaleDraftInput & { saleId: string }) => Promise<Sale>;
+  /** Aperçu local d'une vente, sans effet de bord (paiement Mobile Money). */
+  previewSale: (saleData: SaleDraftInput, saleId: string) => Sale;
   lastCompletedSale: Sale | null;
   setLastCompletedSale: (sale: Sale | null) => void;
   deleteSale: (id: string) => Promise<void>;
@@ -619,44 +612,31 @@ const updateProductionStatus = (orderId: string, newStatus: ProductionStatus) =>
 };
 
 // POS & SALES
-const completeSale = (saleData: {
-  cart: CartItem[];
-  paymentMethod: PaymentMethod;
-  amountPaid: number;
-  customerId?: string;
-  discountPercent?: number;
-  notes?: string;
-}): Sale => {
+
+/**
+ * Aperçu local d'une vente : mêmes règles que le serveur (TVA par taux produit,
+ * remise au prorata). Sert à l'affichage et au paiement Mobile Money. Le
+ * serveur reste la référence : c'est sa réponse qui est enregistrée.
+ */
+const previewSale = (saleData: SaleDraftInput, saleId: string): Sale => {
   const subtotal = saleData.cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
   const discountAmount = saleData.discountPercent
     ? Math.round((subtotal * saleData.discountPercent) / 100)
     : 0;
   const total = subtotal - discountAmount;
-  const changeReturned = Math.max(0, saleData.amountPaid - total);
-
-  // Numérotation de facture séquentielle, non réutilisable.
-  // Elle s'appuie sur le compteur persistant des ventes pour rester
-  // continue et traçable côté fiscal.
-  const receiptNumber = buildReceiptNumber(sales.length + 1);
-
+  const discountRatio = subtotal > 0 ? total / subtotal : 1;
+  const vatBreakdown = computeVatBreakdown(
+    saleData.cart.map((item) => ({
+      amount: item.product.price * item.quantity * discountRatio,
+      vatRate: item.product.vatRate,
+    }))
+  );
+  const amountPaid = saleData.paymentMethod === 'credit_b2b' ? 0 : saleData.amountPaid;
   const matchedCustomer = customers.find((c) => c.id === saleData.customerId);
 
-  // Ventilation de TVA par ligne : les prix en caisse sont TTC, on extrait
-  // la TVA contenue selon le taux propre à chaque produit (source de vérité),
-  // après répartition de la remise au prorata des lignes.
-  const discountRatio = subtotal > 0 ? (subtotal - discountAmount) / subtotal : 1;
-  const vatBreakdown = computeVatBreakdown(
-    saleData.cart
-      .filter((item) => item.product.price > 0 || item.quantity > 0)
-      .map((item) => ({
-        amount: item.product.price * item.quantity * discountRatio,
-        vatRate: item.product.vatRate,
-      }))
-  );
-
-  const newSale: Sale = {
-    id: `sale-${Date.now()}`,
-    receiptNumber,
+  return {
+    id: saleId,
+    receiptNumber: 'PROVISOIRE',
     date: new Date().toISOString(),
     items: saleData.cart.map((item) => ({
       productId: item.product.id,
@@ -667,57 +647,79 @@ const completeSale = (saleData: {
     })),
     subtotal,
     discountAmount,
-    vatAmount: vatBreakdown.vatAmount, // TVA réelle calculée par taux produit
+    vatAmount: vatBreakdown.vatAmount,
     total,
     paymentMethod: saleData.paymentMethod,
-    amountPaid: saleData.amountPaid,
-    changeReturned,
+    amountPaid,
+    changeReturned: saleData.paymentMethod === 'especes' ? Math.max(0, amountPaid - total) : 0,
     customerId: saleData.customerId,
     customerName: matchedCustomer?.name,
-    cashierName: 'Caisse Principale',
+    cashierName: '',
     storeId: writeStoreId,
-    status: 'paye',
+    status: saleData.paymentMethod === 'credit_b2b' ? 'en_attente' : 'paye',
   };
+};
 
-  // 1. Decrement products stock
+/**
+ * Enregistre une vente sur le serveur. Les prix, la TVA, le total, la monnaie
+ * et le numéro de ticket sont ceux renvoyés par le serveur.
+ *
+ * Hors-ligne : la vente est mise en file par apiFetch, rejouée plus tard avec
+ * le même `saleId` (idempotence). Un ticket provisoire est alors affiché.
+ * En erreur serveur ou réseau, l'erreur est remontée et rien n'est appliqué.
+ */
+const completeSale = async (saleData: SaleDraftInput & { saleId: string }): Promise<Sale> => {
+  let sale: Sale;
+  let queued = false;
+  try {
+    sale = await api.post<Sale>('/api/operations/sales', {
+      id: saleData.saleId,
+      items: saleData.cart.map((item) => ({
+        productId: item.product.id,
+        quantity: item.quantity,
+      })),
+      paymentMethod: saleData.paymentMethod,
+      amountPaid: saleData.amountPaid,
+      discountPercent: saleData.discountPercent ?? 0,
+      customerId: saleData.customerId,
+      notes: saleData.notes,
+    });
+  } catch (err) {
+    if (err instanceof ApiError && err.queued) {
+      sale = { ...previewSale(saleData, saleData.saleId), receiptNumber: 'EN ATTENTE DE SYNCHRO' };
+      queued = true;
+    } else {
+      throw err;
+    }
+  }
+
+  // Effets locaux : stock affiché, fidélité / crédit client, caisse, historique.
   setProducts((prev) =>
     prev.map((prod) => {
       const inCart = saleData.cart.find((c) => c.product.id === prod.id);
-      if (inCart) {
-        return {
-          ...prod,
-          stock: Math.max(0, prod.stock - inCart.quantity),
-        };
-      }
-      return prod;
+      return inCart ? { ...prod, stock: Math.max(0, prod.stock - inCart.quantity) } : prod;
     })
   );
 
-  // 2. Handle customer loyalty or B2B credit
-  if (saleData.customerId) {
+  if (sale.customerId) {
     setCustomers((prev) =>
       prev.map((c) => {
-        if (c.id === saleData.customerId) {
-          const addedPoints = Math.floor(total / 100);
-          const addedCredit = saleData.paymentMethod === 'credit_b2b' ? total : 0;
-          return {
-            ...c,
-            loyaltyPoints: c.loyaltyPoints + addedPoints,
-            creditBalance: c.creditBalance + addedCredit,
-          };
-        }
-        return c;
+        if (c.id !== sale.customerId) return c;
+        return {
+          ...c,
+          loyaltyPoints: c.loyaltyPoints + Math.floor(sale.total / 100),
+          creditBalance: c.creditBalance + (sale.paymentMethod === 'credit_b2b' ? sale.total : 0),
+        };
       })
     );
   }
 
-  // 3. Record in Cash Transactions if cash
-  if (saleData.paymentMethod === 'especes') {
+  if (sale.paymentMethod === 'especes') {
     const cashTx: CashTransaction = {
       id: `csh-${Date.now()}`,
       type: 'encaissement_vente',
-      amount: total,
-      description: `Encaissement Ticket ${receiptNumber}`,
+      amount: sale.total,
+      description: `Encaissement Ticket ${sale.receiptNumber}`,
       date: new Date().toISOString(),
       recordedBy: 'Caisse Principale',
       storeId: writeStoreId,
@@ -725,10 +727,14 @@ const completeSale = (saleData: {
     setCashTransactions((prev) => [cashTx, ...prev]);
   }
 
-  setSales((prev) => [newSale, ...prev]);
-  setLastCompletedSale(newSale);
-  showToast(`Vente validée (${formatMoney(total)}) - Ticket ${receiptNumber}`);
-  return newSale;
+  setSales((prev) => [sale, ...prev.filter((s) => s.id !== sale.id)]);
+  setLastCompletedSale(sale);
+  showToast(
+    queued
+      ? `Vente enregistrée hors-ligne (${formatMoney(sale.total)}) - synchronisation à venir`
+      : `Vente validée (${formatMoney(sale.total)}) - Ticket ${sale.receiptNumber}`
+  );
+  return sale;
 };
 
 // CUSTOMER OPERATIONS
@@ -1233,6 +1239,7 @@ return (
       createProductionOrder,
       updateProductionStatus,
       completeSale,
+      previewSale,
       lastCompletedSale,
       setLastCompletedSale,
       addCustomer,

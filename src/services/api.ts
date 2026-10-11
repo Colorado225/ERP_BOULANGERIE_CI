@@ -19,10 +19,13 @@ const API_BASE = import.meta.env.VITE_API_URL ?? "";
 /** Erreur API normalisée, porteuse d'un message lisible. */
 export class ApiError extends Error {
   status: number;
-  constructor(message: string, status: number) {
+  /** true si la requête d'écriture a été mise en file d'attente (hors-ligne). */
+  queued: boolean;
+  constructor(message: string, status: number, queued = false) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.queued = queued;
   }
 }
 
@@ -98,6 +101,7 @@ export const apiFetch = async <T>(
       throw new ApiError(
         "Hors-ligne : l'opération sera synchronisée automatiquement lorsque le réseau sera rétabli.",
         0,
+        true,
       );
     }
     throw new ApiError(
