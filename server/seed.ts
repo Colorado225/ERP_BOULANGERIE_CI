@@ -1,14 +1,20 @@
 /**
- * Seed : alimente la base Neon avec les données de démonstration et les
+ * Seed : alimente la base avec les données de démonstration et les
  * comptes utilisateurs de départ.
  *
  * Usage : npm run db:seed
  *
+ * ⚠️ DESTRUCTIF : toutes les tables métier sont vidées (TRUNCATE) avant insertion.
+ * Le script refuse de s'exécuter si NODE_ENV=production.
+ *
  * Idempotent : les données existantes sont remplacées (TRUNCATE puis insert),
  * afin de pouvoir relancer le seed sans créer de doublons.
+ *
+ * Remplace l'ancien script `seeds.ts` (supprimé) : c'est le seul seed du projet.
  */
 import { pool, query } from "./db";
 import { hashPassword, type Role } from "./auth";
+import { config } from "./config";
 import {
   INITIAL_STORES,
   INITIAL_MATERIALS,
@@ -71,6 +77,12 @@ const USERS: Array<{
 ];
 
 const seed = async () => {
+  if (config.nodeEnv === "production") {
+    throw new Error(
+      "Refusé : le seed de démonstration efface toutes les tables et ne doit jamais tourner en production.",
+    );
+  }
+
   console.log("[seed] Réinitialisation des tables…");
 
   // Ordre respectant les dépendances de clés étrangères.

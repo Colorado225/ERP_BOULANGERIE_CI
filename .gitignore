@@ -1,1 +1,12 @@
 node_modules
+
+# Secrets et configuration locale (seul .env.example est versionné)
+.env
+.env.*
+!.env.example
+
+# Artefacts de build et journaux
+dist
+build
+*.log
+npm-debug.log*
